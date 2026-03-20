@@ -11,3 +11,4 @@ ENV/
 .mypy_cache/
 .coverage
 htmlcov/
+modelling/

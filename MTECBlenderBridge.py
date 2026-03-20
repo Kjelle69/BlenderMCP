@@ -11,6 +11,7 @@ bl_info = {
 import bpy
 import json
 import math
+import mathutils
 import queue
 import threading
 import traceback
@@ -93,6 +94,20 @@ def require_object(object_name: str):
         raise ValueError(f"Object '{object_name}' not found")
     return obj
 
+def require_collection(collection_name: str):
+    collection = bpy.data.collections.get(collection_name)
+    if not collection:
+        raise ValueError(f"Collection '{collection_name}' not found")
+    return collection
+
+def activate_object(obj, mode: str | None = None):
+    bpy.ops.object.select_all(action='DESELECT')
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+    if mode:
+        bpy.ops.object.mode_set(mode=mode)
+    return obj
+
 def object_summary(obj):
     data = {
         "name": obj.name,
@@ -111,6 +126,18 @@ def object_summary(obj):
             "faces": len(obj.data.polygons),
         }
     return data
+
+def object_bounds(obj):
+    if not hasattr(obj, "bound_box"):
+        return None
+    corners = [obj.matrix_world @ mathutils.Vector(corner) for corner in obj.bound_box]
+    mins = [min(v[i] for v in corners) for i in range(3)]
+    maxs = [max(v[i] for v in corners) for i in range(3)]
+    return {
+        "min": mins,
+        "max": maxs,
+        "dimensions": [maxs[i] - mins[i] for i in range(3)],
+    }
 
 def serialize(value):
     if isinstance(value, (str, int, float, bool)) or value is None:
@@ -150,6 +177,32 @@ def tool_list_objects(object_type: str = ""):
             continue
         names.append(object_summary(obj))
     return {"count": len(names), "objects": names}
+
+def tool_get_object_info(object_name: str, include_modifiers: bool = True, include_materials: bool = True):
+    obj = require_object(object_name)
+    data = object_summary(obj)
+    data["mode"] = obj.mode if hasattr(obj, "mode") else None
+    data["parent"] = obj.parent.name if obj.parent else None
+    data["collections"] = [collection.name for collection in obj.users_collection]
+    data["bounds_world"] = object_bounds(obj)
+    data["data_name"] = obj.data.name if getattr(obj, "data", None) else None
+
+    if include_materials and hasattr(obj.data, "materials"):
+        data["materials"] = [material.name if material else None for material in obj.data.materials]
+
+    if include_modifiers:
+        data["modifiers"] = []
+        for modifier in obj.modifiers:
+            data["modifiers"].append(
+                {
+                    "name": modifier.name,
+                    "type": modifier.type,
+                    "show_viewport": modifier.show_viewport,
+                    "show_render": modifier.show_render,
+                }
+            )
+
+    return data
 
 def tool_create_mesh_object(
     primitive_type: str = "cube",
@@ -284,6 +337,36 @@ def tool_duplicate_object(object_name: str, linked: bool = False, count: int = 1
         created.append(object_summary(dup))
     return {"count": len(created), "objects": created}
 
+def tool_select_objects(object_names, active_object: str = "", replace: bool = True):
+    if replace:
+        bpy.ops.object.select_all(action='DESELECT')
+    selected = []
+    for name in object_names:
+        obj = require_object(name)
+        obj.select_set(True)
+        selected.append(obj.name)
+    if active_object:
+        bpy.context.view_layer.objects.active = require_object(active_object)
+    elif selected:
+        bpy.context.view_layer.objects.active = require_object(selected[-1])
+    active = bpy.context.view_layer.objects.active
+    return {"selected": selected, "active": active.name if active else None}
+
+def tool_set_mode(mode: str = "OBJECT", object_name: str = ""):
+    mode = mode.upper()
+    obj = require_object(object_name) if object_name else bpy.context.view_layer.objects.active
+    if not obj:
+        raise ValueError("No active object available")
+    activate_object(obj)
+    bpy.ops.object.mode_set(mode=mode)
+    return {"object": obj.name, "mode": obj.mode}
+
+def tool_apply_transforms(object_name: str, location: bool = False, rotation: bool = True, scale: bool = True):
+    obj = require_object(object_name)
+    activate_object(obj, mode="OBJECT")
+    bpy.ops.object.transform_apply(location=location, rotation=rotation, scale=scale)
+    return object_summary(obj)
+
 def tool_delete_objects(object_names):
     deleted = []
     for name in object_names:
@@ -292,6 +375,39 @@ def tool_delete_objects(object_names):
             bpy.data.objects.remove(obj, do_unlink=True)
             deleted.append(name)
     return {"deleted": deleted, "count": len(deleted)}
+
+def tool_create_collection(name: str, parent: str = ""):
+    existing = bpy.data.collections.get(name)
+    if existing:
+        collection = existing
+    else:
+        collection = bpy.data.collections.new(name)
+        if parent:
+            require_collection(parent).children.link(collection)
+        else:
+            bpy.context.scene.collection.children.link(collection)
+    return {
+        "name": collection.name,
+        "parent": parent or bpy.context.scene.collection.name,
+        "objects": len(collection.objects),
+        "children": len(collection.children),
+    }
+
+def tool_move_to_collection(object_name: str, collection_name: str, unlink_others: bool = False):
+    obj = require_object(object_name)
+    collection = require_collection(collection_name)
+    if obj not in collection.objects[:]:
+        collection.objects.link(obj)
+
+    if unlink_others:
+        for existing in list(obj.users_collection):
+            if existing != collection:
+                existing.objects.unlink(obj)
+
+    return {
+        "object": obj.name,
+        "collections": [c.name for c in obj.users_collection],
+    }
 
 def tool_create_material(
     name: str,
@@ -332,6 +448,19 @@ def tool_assign_material(object_name: str, material_name: str):
     else:
         obj.data.materials[0] = mat
     return {"object": object_name, "material": material_name}
+
+def tool_set_origin(object_name: str, origin_type: str = "ORIGIN_GEOMETRY", center: str = "MEDIAN"):
+    obj = require_object(object_name)
+    activate_object(obj, mode="OBJECT")
+    bpy.ops.object.origin_set(type=origin_type, center=center)
+    return object_summary(obj)
+
+def tool_convert_object(object_name: str, target: str = "MESH"):
+    obj = require_object(object_name)
+    activate_object(obj, mode="OBJECT")
+    bpy.ops.object.convert(target=target)
+    converted = bpy.context.view_layer.objects.active
+    return object_summary(converted)
 
 def tool_create_light(
     light_type: str = "POINT",
@@ -499,14 +628,22 @@ def tool_run_python_snippet(code: str):
 TOOLS = {
     "get_scene_info": {"func": tool_get_scene_info, "description": "Basic scene information", "schema": {}},
     "list_objects": {"func": tool_list_objects, "description": "List scene objects", "schema": {"object_type": "Optional Blender type filter"}},
+    "get_object_info": {"func": tool_get_object_info, "description": "Detailed object information", "schema": {"object_name": "str"}},
     "create_mesh_object": {"func": tool_create_mesh_object, "description": "Create a primitive mesh object", "schema": {}},
     "create_curve_object": {"func": tool_create_curve_object, "description": "Create a curve object", "schema": {}},
     "create_text_object": {"func": tool_create_text_object, "description": "Create a text object", "schema": {}},
     "transform_object": {"func": tool_transform_object, "description": "Move/rotate/scale an object", "schema": {}},
     "duplicate_object": {"func": tool_duplicate_object, "description": "Duplicate object(s)", "schema": {}},
+    "select_objects": {"func": tool_select_objects, "description": "Select one or more objects", "schema": {"object_names": "List[str]"}},
+    "set_mode": {"func": tool_set_mode, "description": "Set object interaction mode", "schema": {"mode": "OBJECT|EDIT|SCULPT|..." }},
+    "apply_transforms": {"func": tool_apply_transforms, "description": "Apply object transforms", "schema": {"object_name": "str"}},
     "delete_objects": {"func": tool_delete_objects, "description": "Delete objects", "schema": {"object_names": "List[str]"}},
+    "create_collection": {"func": tool_create_collection, "description": "Create a collection", "schema": {"name": "str"}},
+    "move_to_collection": {"func": tool_move_to_collection, "description": "Link object into collection", "schema": {"object_name": "str", "collection_name": "str"}},
     "create_material": {"func": tool_create_material, "description": "Create a basic principled material", "schema": {}},
     "assign_material": {"func": tool_assign_material, "description": "Assign first material slot", "schema": {}},
+    "set_origin": {"func": tool_set_origin, "description": "Set object origin", "schema": {"object_name": "str"}},
+    "convert_object": {"func": tool_convert_object, "description": "Convert object type", "schema": {"object_name": "str", "target": "MESH|CURVE|..." }},
     "create_light": {"func": tool_create_light, "description": "Create a light", "schema": {}},
     "create_camera": {"func": tool_create_camera, "description": "Create a camera", "schema": {}},
     "add_modifier": {"func": tool_add_modifier, "description": "Add modifier to object", "schema": {}},

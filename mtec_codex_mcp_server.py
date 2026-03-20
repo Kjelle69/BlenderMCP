@@ -57,6 +57,20 @@ def list_objects(object_type: str = "") -> dict:
     return bridge_invoke("list_objects", object_type=object_type)
 
 @mcp.tool()
+def get_object_info(
+    object_name: str,
+    include_modifiers: bool = True,
+    include_materials: bool = True,
+) -> dict:
+    """Return detailed information for one Blender object."""
+    return bridge_invoke(
+        "get_object_info",
+        object_name=object_name,
+        include_modifiers=include_modifiers,
+        include_materials=include_materials,
+    )
+
+@mcp.tool()
 def create_mesh_object(
     primitive_type: str = "cube",
     name: str = "",
@@ -149,9 +163,59 @@ def duplicate_object(
     )
 
 @mcp.tool()
+def select_objects(
+    object_names: list[str],
+    active_object: str = "",
+    replace: bool = True,
+) -> dict:
+    """Select objects and optionally choose the active object."""
+    return bridge_invoke(
+        "select_objects",
+        object_names=object_names,
+        active_object=active_object,
+        replace=replace,
+    )
+
+@mcp.tool()
+def set_mode(mode: str = "OBJECT", object_name: str = "") -> dict:
+    """Set Blender interaction mode for the active or provided object."""
+    return bridge_invoke("set_mode", mode=mode, object_name=object_name)
+
+@mcp.tool()
+def apply_transforms(
+    object_name: str,
+    location: bool = False,
+    rotation: bool = True,
+    scale: bool = True,
+) -> dict:
+    """Apply object transforms."""
+    return bridge_invoke(
+        "apply_transforms",
+        object_name=object_name,
+        location=location,
+        rotation=rotation,
+        scale=scale,
+    )
+
+@mcp.tool()
 def delete_objects(object_names: list[str]) -> dict:
     """Delete Blender objects by name."""
     return bridge_invoke("delete_objects", object_names=object_names)
+
+@mcp.tool()
+def create_collection(name: str, parent: str = "") -> dict:
+    """Create a collection in the current scene."""
+    return bridge_invoke("create_collection", name=name, parent=parent)
+
+@mcp.tool()
+def move_to_collection(object_name: str, collection_name: str, unlink_others: bool = False) -> dict:
+    """Move or link an object into a collection."""
+    return bridge_invoke(
+        "move_to_collection",
+        object_name=object_name,
+        collection_name=collection_name,
+        unlink_others=unlink_others,
+    )
 
 @mcp.tool()
 def create_material(
@@ -173,6 +237,25 @@ def create_material(
 def assign_material(object_name: str, material_name: str) -> dict:
     """Assign a material to an object."""
     return bridge_invoke("assign_material", object_name=object_name, material_name=material_name)
+
+@mcp.tool()
+def set_origin(
+    object_name: str,
+    origin_type: str = "ORIGIN_GEOMETRY",
+    center: str = "MEDIAN",
+) -> dict:
+    """Set an object's origin."""
+    return bridge_invoke(
+        "set_origin",
+        object_name=object_name,
+        origin_type=origin_type,
+        center=center,
+    )
+
+@mcp.tool()
+def convert_object(object_name: str, target: str = "MESH") -> dict:
+    """Convert an object to another Blender data type."""
+    return bridge_invoke("convert_object", object_name=object_name, target=target)
 
 @mcp.tool()
 def create_light(
