@@ -52,6 +52,60 @@ def get_scene_info() -> dict:
     return bridge_invoke("get_scene_info")
 
 @mcp.tool()
+def set_bridge_options(
+    view_mode: str | None = None,
+    auto_focus: bool | None = None,
+    auto_orbit: bool | None = None,
+    smooth_view: bool | None = None,
+    view_duration: float | None = None,
+    cinematic_duration: float | None = None,
+    cinematic_yaw_deg: float | None = None,
+    cinematic_pitch_deg: float | None = None,
+    cinematic_sweep_step_deg: float | None = None,
+    cinematic_pitch_variation_deg: float | None = None,
+    cinematic_distance_scale: float | None = None,
+    cinematic_retain_distance: float | None = None,
+    cinematic_dolly_variation: float | None = None,
+    orbit_yaw_deg: float | None = None,
+    orbit_pitch_deg: float | None = None,
+    orbit_roll_deg: float | None = None,
+) -> dict:
+    """Configure bridge runtime options."""
+    return bridge_invoke(
+        "set_bridge_options",
+        view_mode=view_mode,
+        auto_focus=auto_focus,
+        auto_orbit=auto_orbit,
+        smooth_view=smooth_view,
+        view_duration=view_duration,
+        cinematic_duration=cinematic_duration,
+        cinematic_yaw_deg=cinematic_yaw_deg,
+        cinematic_pitch_deg=cinematic_pitch_deg,
+        cinematic_sweep_step_deg=cinematic_sweep_step_deg,
+        cinematic_pitch_variation_deg=cinematic_pitch_variation_deg,
+        cinematic_distance_scale=cinematic_distance_scale,
+        cinematic_retain_distance=cinematic_retain_distance,
+        cinematic_dolly_variation=cinematic_dolly_variation,
+        orbit_yaw_deg=orbit_yaw_deg,
+        orbit_pitch_deg=orbit_pitch_deg,
+        orbit_roll_deg=orbit_roll_deg,
+    )
+
+@mcp.tool()
+def cinematic_reveal_selection(
+    object_names: list[str] | None = None,
+    duration: float | None = None,
+    steps: int = 5,
+) -> dict:
+    """Run a cinematic viewport reveal for selected objects."""
+    return bridge_invoke(
+        "cinematic_reveal_selection",
+        object_names=object_names,
+        duration=duration,
+        steps=steps,
+    )
+
+@mcp.tool()
 def list_objects(object_type: str = "") -> dict:
     """List objects in the current Blender scene."""
     return bridge_invoke("list_objects", object_type=object_type)
@@ -372,6 +426,160 @@ def save_blend_file(file_path: str) -> dict:
 def clear_scene(keep_cameras: bool = True, keep_lights: bool = True) -> dict:
     """Clear current scene."""
     return bridge_invoke("clear_scene", keep_cameras=keep_cameras, keep_lights=keep_lights)
+
+@mcp.tool()
+def set_timeline_frame(frame: int) -> dict:
+    """Set the current Blender timeline frame."""
+    return bridge_invoke("set_timeline_frame", frame=frame)
+
+@mcp.tool()
+def set_viewport_shading(
+    shading_type: str = "RENDERED",
+    use_scene_lights: bool = True,
+    use_scene_world: bool = True,
+) -> dict:
+    """Set shading mode for visible 3D viewports."""
+    return bridge_invoke(
+        "set_viewport_shading",
+        shading_type=shading_type,
+        use_scene_lights=use_scene_lights,
+        use_scene_world=use_scene_world,
+    )
+
+@mcp.tool()
+def set_rigid_body_world(
+    frame_start: int | None = None,
+    frame_end: int | None = None,
+    substeps_per_frame: int | None = None,
+    solver_iterations: int | None = None,
+    gravity: list[float] | None = None,
+    enabled: bool | None = None,
+) -> dict:
+    """Configure the scene rigid body world."""
+    return bridge_invoke(
+        "set_rigid_body_world",
+        frame_start=frame_start,
+        frame_end=frame_end,
+        substeps_per_frame=substeps_per_frame,
+        solver_iterations=solver_iterations,
+        gravity=gravity,
+        enabled=enabled,
+    )
+
+@mcp.tool()
+def add_rigid_body(
+    object_name: str,
+    body_type: str = "ACTIVE",
+    collision_shape: str = "BOX",
+    mass: float = 1.0,
+    friction: float = 0.5,
+    restitution: float = 0.0,
+    collision_margin: float = 0.04,
+    linear_damping: float = 0.04,
+    angular_damping: float = 0.1,
+    use_margin: bool = True,
+    enabled: bool = True,
+) -> dict:
+    """Add a rigid body to an object."""
+    return bridge_invoke(
+        "add_rigid_body",
+        object_name=object_name,
+        body_type=body_type,
+        collision_shape=collision_shape,
+        mass=mass,
+        friction=friction,
+        restitution=restitution,
+        collision_margin=collision_margin,
+        linear_damping=linear_damping,
+        angular_damping=angular_damping,
+        use_margin=use_margin,
+        enabled=enabled,
+    )
+
+@mcp.tool()
+def configure_rigid_body(
+    object_name: str,
+    body_type: str | None = None,
+    collision_shape: str | None = None,
+    mass: float | None = None,
+    friction: float | None = None,
+    restitution: float | None = None,
+    collision_margin: float | None = None,
+    linear_damping: float | None = None,
+    angular_damping: float | None = None,
+    use_margin: bool | None = None,
+    enabled: bool | None = None,
+) -> dict:
+    """Configure an existing rigid body."""
+    return bridge_invoke(
+        "configure_rigid_body",
+        object_name=object_name,
+        body_type=body_type,
+        collision_shape=collision_shape,
+        mass=mass,
+        friction=friction,
+        restitution=restitution,
+        collision_margin=collision_margin,
+        linear_damping=linear_damping,
+        angular_damping=angular_damping,
+        use_margin=use_margin,
+        enabled=enabled,
+    )
+
+@mcp.tool()
+def free_bake() -> dict:
+    """Free all physics cache bakes."""
+    return bridge_invoke("free_bake")
+
+@mcp.tool()
+def reset_physics_simulation(frame: int | None = None) -> dict:
+    """Clear physics caches and reset the timeline."""
+    return bridge_invoke("reset_physics_simulation", frame=frame)
+
+@mcp.tool()
+def bake_to_frame(frame_end: int, frame_start: int | None = None) -> dict:
+    """Bake physics caches up to a frame."""
+    return bridge_invoke("bake_to_frame", frame_end=frame_end, frame_start=frame_start)
+
+@mcp.tool()
+def add_impactor(
+    name: str = "Impactor",
+    location: list[float] | None = None,
+    radius: float = 1.0,
+    mass: float = 25.0,
+    collision_shape: str = "SPHERE",
+    friction: float = 0.4,
+    restitution: float = 0.05,
+    subdivisions: int = 3,
+) -> dict:
+    """Create a heavy rigid body impactor sphere."""
+    return bridge_invoke(
+        "add_impactor",
+        name=name,
+        location=location,
+        radius=radius,
+        mass=mass,
+        collision_shape=collision_shape,
+        friction=friction,
+        restitution=restitution,
+        subdivisions=subdivisions,
+    )
+
+@mcp.tool()
+def build_and_smash_demo(
+    base_size: int = 5,
+    cube_size: float = 1.0,
+    impactor_mass: float = 60.0,
+    impactor_height: float = 12.0,
+) -> dict:
+    """Build a lit rigid-body cube demo scene with cinematic reveal."""
+    return bridge_invoke(
+        "build_and_smash_demo",
+        base_size=base_size,
+        cube_size=cube_size,
+        impactor_mass=impactor_mass,
+        impactor_height=impactor_height,
+    )
 
 @mcp.tool()
 def call_operator(operator_id: str, kwargs: dict | None = None) -> dict:
