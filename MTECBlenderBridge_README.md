@@ -1,162 +1,191 @@
-# MTEC Blender Bridge + MTECCodexMCP
+# MTEC Blender Bridge
 
-Det här upplägget delar upp systemet i två delar:
+This project connects Codex or any MCP client to Blender in two steps:
 
-1. **MTECBlenderBridge.py**  
-   Körs **inne i Blender** som addon och exponerar ett enkelt lokalt HTTP-API.
+1. `MTECBlenderBridge.py`
+   Runs inside Blender as an addon and exposes a local HTTP bridge.
+2. `mtec_codex_mcp_server.py`
+   Runs outside Blender in a normal Python environment and exposes MCP over `stdio`.
 
-2. **mtec_codex_mcp_server.py**  
-   Körs **utanför Blender** i en vanlig Python-miljö och exponerar en riktig MCP-server för Codex/VS Code.
+The split keeps Blender-side dependencies small while still giving Codex access to Blender tools.
 
-Det gör att Blender slipper bära hela MCP/Windows-beroendekedjan.
+## How It Works
 
----
+Codex / VS Code MCP client
+-> `mtec_codex_mcp_server.py`
+-> HTTP requests
+-> `MTECBlenderBridge.py` inside Blender
+-> `bpy`
 
-## Arkitektur
+## Prerequisites
 
-VS Code + Codex  
-→ `mtec_codex_mcp_server.py` (MCP server, stdio)  
-→ HTTP  
-→ `MTECBlenderBridge.py` i Blender  
-→ `bpy`
+- Blender 3.6 or newer
+- Python 3.10+ recommended for the external MCP server
+- A local MCP client such as Codex in VS Code
 
----
+## 1. Install The Blender Addon
 
-## 1. Installera Blender-addonen
+In Blender:
 
-I Blender:
+1. Open `Edit -> Preferences -> Add-ons`
+2. Click `Install...`
+3. Select `MTECBlenderBridge.py`
+4. Enable the addon
 
-- Edit → Preferences → Add-ons
-- Install from Disk
-- välj `MTECBlenderBridge.py`
-- aktivera addonen
+After enabling it:
 
-I 3D Viewport → Sidebar → **MTEC MCP**:
+1. Open the `3D Viewport`
+2. Open the right sidebar with `N` if needed
+3. Go to the `MTEC MCP` tab
+4. Click `Start MTEC Bridge`
 
-- klicka **Start MTEC Bridge**
+The bridge starts a local HTTP server at:
 
-Standardadress:
-- `http://127.0.0.1:8765`
+`http://127.0.0.1:8765`
 
-Snabbtest i webbläsare:
+Useful health checks:
+
 - `http://127.0.0.1:8765/health`
 - `http://127.0.0.1:8765/tools`
+- `http://127.0.0.1:8765/invoke`
 
----
+## 2. Create The External Python Environment
 
-## 2. Skapa Python-miljö för MCP-servern
-
-I vanlig terminal, utanför Blender:
-
-```bash
-python -m venv .venv
-```
-
-Aktivera miljön.
-
-Windows PowerShell:
+From a normal terminal outside Blender:
 
 ```powershell
+python -m venv .venv
 .venv\Scripts\Activate.ps1
-```
-
-Installera paket:
-
-```bash
 pip install fastmcp httpx
 ```
 
----
+## 3. Start The MCP Server
 
-## 3. Starta extern MCP-server
-
-```bash
-python mtec_codex_mcp_server.py
-```
-
-Detta kör MCP-servern över stdio, vilket passar Codex bra.
-
-Om Blender-bridgen kör på annan adress än standard:
+Run the external server from this project folder:
 
 ```powershell
-$env:MTEC_BLENDER_BRIDGE_URL="http://127.0.0.1:8765"
-python mtec_codex_mcp_server.py
+.venv\Scripts\python.exe .\mtec_codex_mcp_server.py
 ```
 
----
+By default it connects to:
 
-## 4. Koppla till Codex i VS Code
+`http://127.0.0.1:8765`
 
-Lägg till den som MCP-server i Codex-konfig med kommando som startar den externa Python-processen.
+If your Blender bridge uses a different address or port, set the environment variable before starting:
 
-Exempelidé:
+```powershell
+$env:MTEC_BLENDER_BRIDGE_URL = "http://127.0.0.1:8765"
+.venv\Scripts\python.exe .\mtec_codex_mcp_server.py
+```
 
-- namn: `mtec-blender`
-- kommando: python
-- argument: `mtec_codex_mcp_server.py`
+Optional timeout override:
 
-Om du kör venv, peka gärna direkt på rätt `python.exe` i `.venv`.
+```powershell
+$env:MTEC_BLENDER_BRIDGE_TIMEOUT = "120"
+```
 
----
+## 4. Configure Codex / VS Code
 
-## 5. Första tester i Codex
+Add the MCP server to your Codex MCP configuration so Codex starts the external Python process.
 
-Exempelprompter:
+Typical values:
 
-- `List the current Blender scene objects.`
+- Name: `mtec-blender`
+- Command: `D:\PythonProjects\BlenderMCP\.venv\Scripts\python.exe`
+- Args: `D:\PythonProjects\BlenderMCP\mtec_codex_mcp_server.py`
+
+If your MCP client supports environment variables, you can also pass `MTEC_BLENDER_BRIDGE_URL` there.
+
+## 5. Recommended Startup Order
+
+Each time you want to use the bridge:
+
+1. Open Blender
+2. Enable the addon if it is not already enabled
+3. In the `MTEC MCP` panel, click `Start MTEC Bridge`
+4. Start `mtec_codex_mcp_server.py`
+5. Start or reconnect your MCP client
+6. Ask Codex to inspect or edit the Blender scene
+
+## 6. First Test Prompts
+
+Good first prompts for Codex:
+
+- `Check whether the Blender bridge is healthy.`
+- `List the available Blender tools.`
+- `List all objects in the current Blender scene.`
 - `Create a cube named TestCube at the origin.`
 - `Move TestCube to x=2, y=0, z=1.`
-- `Create a material called RedPaint and assign it to TestCube.`
+- `Create a red material named RedPaint and assign it to TestCube.`
 - `Add a bevel modifier to TestCube with width 0.05 and 2 segments.`
-- `Render an image to C:\temp\test.png`
+- `Render an image to D:\temp\test.png`
 
----
+## What This Bridge Can Do
 
-## Verktyg i v0.1
+The current bridge exposes tools for:
 
-Blender bridge:
+- Scene inspection
+- Object creation and transforms
+- Collections and selection
+- Materials
+- Lights and cameras
+- Modifiers and booleans
+- Import and export
+- Render settings and still renders
+- Viewport automation
+- Rigid body setup and demo scenes
+- Generic `bpy.ops` calls
+- Raw Python execution inside Blender
 
-- `get_scene_info`
-- `list_objects`
-- `create_mesh_object`
-- `create_curve_object`
-- `create_text_object`
-- `transform_object`
-- `duplicate_object`
-- `delete_objects`
-- `create_material`
-- `assign_material`
-- `create_light`
-- `create_camera`
-- `add_modifier`
-- `apply_modifier`
-- `boolean_operation`
-- `configure_render_settings`
-- `render_image`
-- `import_file`
-- `export_file`
-- `save_blend_file`
-- `clear_scene`
-- `call_operator`
-- `run_python_snippet`
+To see the exact tool list at runtime, open:
 
----
+`http://127.0.0.1:8765/tools`
 
-## Viktigt
+Or ask the MCP tool:
 
-`run_python_snippet` är mycket kraftfullt.  
-Bra för intern utveckling, men bör låsas ned senare om ni vill ha hårdare kontroll.
+- `blender_list_tools`
 
----
+## Viewport Features
 
-## Nästa steg
+The Blender panel also includes runtime viewport controls under `MTEC MCP -> Viewport`.
 
-Bra kandidater för v0.2:
+You can switch between:
 
-- geometry nodes
-- particle systems
-- rigid body / cloth / fluids
-- bättre typed schemas per tool
-- bildfångst från viewport
-- sessions/loggning
-- whitelistad operator-policy
+- `Manual`
+- `Cinematic`
+
+And control options such as:
+
+- Auto-focus edited objects
+- Auto-orbit edited objects
+- Smooth camera motion
+- View animation duration
+- Cinematic sweep and distance settings
+
+These can also be changed through the MCP tool `set_bridge_options`.
+
+## Troubleshooting
+
+If Codex cannot reach Blender:
+
+- Make sure the addon is enabled
+- Make sure `Start MTEC Bridge` has been clicked in Blender
+- Open `http://127.0.0.1:8765/health` in a browser
+- Make sure the MCP server is using the same URL as the Blender bridge
+
+If the MCP server fails to start:
+
+- Activate the correct virtual environment
+- Verify `fastmcp` and `httpx` are installed
+- Run the script directly in a terminal first to inspect any import errors
+
+If tool calls time out:
+
+- Increase `MTEC_BLENDER_BRIDGE_TIMEOUT`
+- Check whether Blender is busy with a long operation
+
+## Security Note
+
+`run_python_snippet` is intentionally powerful and executes Python inside Blender.
+
+That is useful for development and advanced workflows, but it should only be exposed in trusted local environments.
