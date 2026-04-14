@@ -1760,6 +1760,63 @@ def tool_auto_weight_nearest_bone(mesh_name: str, armature_name: str):
     mesh.parent = arm
     return {"ok": True, "method": "nearest_bone", "mesh": mesh.name, "armature": arm.name}
 
+def tool_auto_weight_two_nearest(mesh_name: str, armature_name: str):
+    mesh = bpy.data.objects.get(mesh_name)
+    arm = bpy.data.objects.get(armature_name)
+    if not mesh or not arm:
+        return {"ok": False, "error": "Mesh or armature not found"}
+    bpy.ops.object.select_all(action="DESELECT")
+    mesh.select_set(True)
+    bpy.context.view_layer.objects.active = mesh
+    mesh.vertex_groups.clear()
+    vg_map = {}
+    for bone in arm.data.bones:
+        vg_map[bone.name] = mesh.vertex_groups.new(name=bone.name)
+
+    arm_mat = arm.matrix_world
+    bones = arm.data.bones
+    verts = mesh.data.vertices
+
+    for v in verts:
+        p_world = mesh.matrix_world @ v.co
+        dists = []
+        for b in bones:
+            head_w = arm_mat @ b.head_local
+            tail_w = arm_mat @ b.tail_local
+            d = _point_to_segment_distance(p_world, head_w, tail_w)
+            dists.append((d, b.name))
+        dists.sort(key=lambda x: x[0])
+        closest = dists[0]
+        second = dists[1] if len(dists) > 1 else None
+        if closest[0] < 1e-6 and second:
+            w1, w2 = 0.8, 0.2
+        elif second:
+            inv1 = 1.0 / (closest[0] + 1e-6)
+            inv2 = 1.0 / (second[0] + 1e-6)
+            total = inv1 + inv2
+            w1 = inv1 / total
+            w2 = inv2 / total
+        else:
+            w1, w2 = 1.0, 0.0
+        vg_map[closest[1]].add([v.index], w1, 'REPLACE')
+        if second:
+            vg_map[second[1]].add([v.index], w2, 'ADD')
+
+    _select_active(mesh)
+    bpy.ops.object.vertex_group_normalize_all(lock_active=False)
+
+    arm_mod = None
+    for m in mesh.modifiers:
+        if m.type == 'ARMATURE':
+            arm_mod = m
+            break
+    if arm_mod is None:
+        arm_mod = mesh.modifiers.new(name="Armature", type='ARMATURE')
+    arm_mod.object = arm
+    mesh.parent = arm
+
+    return {"ok": True, "method": "two_nearest", "mesh": mesh.name, "armature": arm.name}
+
 def tool_attach_armature_modifier(mesh_name: str, armature_name: str, make_parent: bool = True):
     mesh = bpy.data.objects.get(mesh_name)
     arm = bpy.data.objects.get(armature_name)
@@ -1990,6 +2047,7 @@ TOOLS = {
     "create_armature_from_mesh": {"func": tool_create_armature_from_mesh, "description": "Create humanoid rig scaled to mesh height", "schema": {"mesh_name": "str", "armature_name": "str"}},
     "rebind_auto_weights": {"func": tool_rebind_auto_weights, "description": "Parent mesh to armature with automatic weights", "schema": {"mesh_name": "str", "armature_name": "str", "clean_threshold": "float"}},
     "auto_weight_nearest_bone": {"func": tool_auto_weight_nearest_bone, "description": "Naive weights: assign each vertex to nearest bone", "schema": {"mesh_name": "str", "armature_name": "str"}},
+    "auto_weight_two_nearest": {"func": tool_auto_weight_two_nearest, "description": "Weights to two closest bones (inverse distance)", "schema": {"mesh_name": "str", "armature_name": "str"}},
     "attach_armature_modifier": {"func": tool_attach_armature_modifier, "description": "Add/refresh armature modifier and optional parenting", "schema": {"mesh_name": "str", "armature_name": "str", "make_parent": "bool"}},
     "import_file": {"func": tool_import_file, "description": "Import supported 3D file", "schema": {}},
     "export_file": {"func": tool_export_file, "description": "Export supported 3D file", "schema": {}},
