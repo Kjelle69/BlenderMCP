@@ -26,7 +26,7 @@ from urllib.parse import urlparse
 # ============================================================
 
 class MTECBRIDGE_Config:
-    REVISION = "v260414f"
+    REVISION = "v260414g"
     HOST = "127.0.0.1"
     PORT = 8765
     QUEUE_TIMEOUT = 60.0
@@ -1601,6 +1601,113 @@ def tool_setup_simple_ik(armature_name: str, create_targets: bool = True, chain_
         "leg_targets": leg_targets,
     }
 
+def tool_reset_mesh_rigging(mesh_name: str):
+    mesh = bpy.data.objects.get(mesh_name)
+    if not mesh:
+        return {"ok": False, "error": f"Mesh '{mesh_name}' not found"}
+    bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.ops.object.select_all(action="DESELECT")
+    mesh.select_set(True)
+    bpy.context.view_layer.objects.active = mesh
+    try:
+        bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
+    except Exception:
+        pass
+    for m in list(mesh.modifiers):
+        if m.type == 'ARMATURE':
+            mesh.modifiers.remove(m)
+    mesh.vertex_groups.clear()
+    return {"ok": True, "mesh": mesh_name}
+
+def tool_apply_rot_scale(object_name: str):
+    obj = bpy.data.objects.get(object_name)
+    if not obj:
+        return {"ok": False, "error": f"Object '{object_name}' not found"}
+    bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.ops.object.select_all(action="DESELECT")
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+    return {"ok": True, "applied": object_name}
+
+def tool_create_armature_from_mesh(mesh_name: str, armature_name: str = "HumanoidRig"):
+    mesh = bpy.data.objects.get(mesh_name)
+    if not mesh:
+        return {"ok": False, "error": f"Mesh '{mesh_name}' not found"}
+    world_verts = [mesh.matrix_world @ mathutils.Vector(v) for v in mesh.bound_box]
+    mins = mathutils.Vector((min(v.x for v in world_verts),
+                             min(v.y for v in world_verts),
+                             min(v.z for v in world_verts)))
+    maxs = mathutils.Vector((max(v.x for v in world_verts),
+                             max(v.y for v in world_verts),
+                             max(v.z for v in world_verts)))
+    center = (mins + maxs) * 0.5
+    height = maxs.z - mins.z
+    template_height = 1.8
+    scale = height / template_height if template_height > 0 else 1.0
+
+    bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.ops.object.select_all(action="DESELECT")
+    bpy.ops.object.armature_add(enter_editmode=True, location=(center.x, center.y, mins.z))
+    arm = bpy.context.active_object
+    arm.name = armature_name
+    eb = arm.data.edit_bones
+    eb.remove(eb[0])
+
+    def add(name, head, tail, parent=None):
+        bone = eb.new(name)
+        bone.head = mathutils.Vector(head) * scale + mathutils.Vector((center.x, center.y, mins.z))
+        bone.tail = mathutils.Vector(tail) * scale + mathutils.Vector((center.x, center.y, mins.z))
+        if parent:
+            bone.parent = parent
+        return bone
+
+    hips = add("hips", (0, 0, 1.0), (0, 0, 1.15))
+    spine = add("spine", (0, 0, 1.15), (0, 0, 1.35), hips)
+    chest = add("chest", (0, 0, 1.35), (0, 0, 1.55), spine)
+    neck = add("neck", (0, 0, 1.55), (0, 0, 1.7), chest)
+    add("head", (0, 0, 1.7), (0, 0, 1.9), neck)
+
+    l_sh = add("shoulder.L", (0, 0, 1.5), (0.12, 0, 1.5), chest)
+    l_ua = add("upper_arm.L", (0.12, 0, 1.5), (0.42, 0, 1.48), l_sh)
+    l_la = add("lower_arm.L", (0.42, 0, 1.48), (0.72, 0, 1.25), l_ua)
+    add("hand.L", (0.72, 0, 1.25), (0.82, 0, 1.15), l_la)
+
+    r_sh = add("shoulder.R", (0, 0, 1.5), (-0.12, 0, 1.5), chest)
+    r_ua = add("upper_arm.R", (-0.12, 0, 1.5), (-0.42, 0, 1.48), r_sh)
+    r_la = add("lower_arm.R", (-0.42, 0, 1.48), (-0.72, 0, 1.25), r_ua)
+    add("hand.R", (-0.72, 0, 1.25), (-0.82, 0, 1.15), r_la)
+
+    l_thigh = add("thigh.L", (0.08, 0, 1.0), (0.08, 0, 0.55), hips)
+    l_shin = add("shin.L", (0.08, 0, 0.55), (0.08, 0, 0.1), l_thigh)
+    add("foot.L", (0.08, 0, 0.1), (0.18, 0.1, 0.0), l_shin)
+
+    r_thigh = add("thigh.R", (-0.08, 0, 1.0), (-0.08, 0, 0.55), hips)
+    r_shin = add("shin.R", (-0.08, 0, 0.55), (-0.08, 0, 0.1), r_thigh)
+    add("foot.R", (-0.08, 0, 0.1), (-0.18, 0.1, 0.0), r_shin)
+
+    bpy.ops.object.mode_set(mode="OBJECT")
+    return {"ok": True, "armature": arm.name, "scale": scale, "mesh_height": height}
+
+def tool_rebind_auto_weights(mesh_name: str, armature_name: str, clean_threshold: float = 0.0):
+    mesh = bpy.data.objects.get(mesh_name)
+    arm = bpy.data.objects.get(armature_name)
+    if not mesh or not arm:
+        return {"ok": False, "error": "Mesh or armature not found"}
+    bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.ops.object.select_all(action="DESELECT")
+    mesh.select_set(True)
+    arm.select_set(True)
+    bpy.context.view_layer.objects.active = arm
+    try:
+        bpy.ops.object.parent_set(type='ARMATURE_AUTO', keep_transform=True)
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+    if clean_threshold > 0:
+        _select_active(mesh)
+        bpy.ops.object.vertex_group_clean(group_select_mode="ALL", limit=clean_threshold)
+    return {"ok": True, "bound": mesh.name, "armature": arm.name}
+
 def tool_fit_armature_to_mesh(mesh_name: str, armature_name: str):
     mesh = bpy.data.objects.get(mesh_name)
     arm = bpy.data.objects.get(armature_name)
@@ -1809,6 +1916,10 @@ TOOLS = {
     "retarget_bone_map": {"func": tool_retarget_bone_map, "description": "Export a simple humanoid bone map", "schema": {"armature_name": "str"}},
     "setup_simple_ik": {"func": tool_setup_simple_ik, "description": "Add simple IK constraints for hands/feet", "schema": {"armature_name": "str", "create_targets": "bool", "chain_arm": "int", "chain_leg": "int"}},
     "fit_armature_to_mesh": {"func": tool_fit_armature_to_mesh, "description": "Scale/position armature to mesh bounds", "schema": {"mesh_name": "str", "armature_name": "str"}},
+    "reset_mesh_rigging": {"func": tool_reset_mesh_rigging, "description": "Clear parent, armature modifiers, vertex groups", "schema": {"mesh_name": "str"}},
+    "apply_rot_scale": {"func": tool_apply_rot_scale, "description": "Apply rotation & scale to object", "schema": {"object_name": "str"}},
+    "create_armature_from_mesh": {"func": tool_create_armature_from_mesh, "description": "Create humanoid rig scaled to mesh height", "schema": {"mesh_name": "str", "armature_name": "str"}},
+    "rebind_auto_weights": {"func": tool_rebind_auto_weights, "description": "Parent mesh to armature with automatic weights", "schema": {"mesh_name": "str", "armature_name": "str", "clean_threshold": "float"}},
     "import_file": {"func": tool_import_file, "description": "Import supported 3D file", "schema": {}},
     "export_file": {"func": tool_export_file, "description": "Export supported 3D file", "schema": {}},
     "save_blend_file": {"func": tool_save_blend_file, "description": "Save .blend file", "schema": {}},
