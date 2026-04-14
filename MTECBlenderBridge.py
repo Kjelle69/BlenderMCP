@@ -26,7 +26,7 @@ from urllib.parse import urlparse
 # ============================================================
 
 class MTECBRIDGE_Config:
-    REVISION = "v260414b"
+    REVISION = "v260414c"
     HOST = "127.0.0.1"
     PORT = 8765
     QUEUE_TIMEOUT = 60.0
@@ -1425,6 +1425,126 @@ def tool_run_python_snippet(code: str):
         "locals": serialize({k: v for k, v in execution_ns.items() if not k.startswith("__")})
     }
 
+def tool_create_armature_humanoid(name: str = "HumanoidRig", scale: float = 1.0):
+    bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.ops.object.select_all(action="DESELECT")
+    bpy.ops.object.armature_add(enter_editmode=True, location=(0, 0, 0))
+    arm = bpy.context.active_object
+    arm.name = name
+    eb = arm.data.edit_bones
+    eb.remove(eb[0])
+
+    def add(name, head, tail, parent=None):
+        bone = eb.new(name)
+        bone.head = mathutils.Vector(head) * scale
+        bone.tail = mathutils.Vector(tail) * scale
+        if parent:
+            bone.parent = parent
+        return bone
+
+    hips = add("hips", (0, 0, 1), (0, 0, 1.15))
+    spine = add("spine", (0, 0, 1.15), (0, 0, 1.35), hips)
+    chest = add("chest", (0, 0, 1.35), (0, 0, 1.55), spine)
+    neck = add("neck", (0, 0, 1.55), (0, 0, 1.7), chest)
+    head = add("head", (0, 0, 1.7), (0, 0, 1.9), neck)
+
+    l_sh = add("shoulder.L", (0, 0, 1.5), (0.12, 0, 1.5), chest)
+    l_ua = add("upper_arm.L", (0.12, 0, 1.5), (0.42, 0, 1.48), l_sh)
+    l_la = add("lower_arm.L", (0.42, 0, 1.48), (0.72, 0, 1.25), l_ua)
+    l_hand = add("hand.L", (0.72, 0, 1.25), (0.82, 0, 1.15), l_la)
+
+    r_sh = add("shoulder.R", (0, 0, 1.5), (-0.12, 0, 1.5), chest)
+    r_ua = add("upper_arm.R", (-0.12, 0, 1.5), (-0.42, 0, 1.48), r_sh)
+    r_la = add("lower_arm.R", (-0.42, 0, 1.48), (-0.72, 0, 1.25), r_ua)
+    r_hand = add("hand.R", (-0.72, 0, 1.25), (-0.82, 0, 1.15), r_la)
+
+    l_thigh = add("thigh.L", (0.08, 0, 1.0), (0.08, 0, 0.55), hips)
+    l_shin = add("shin.L", (0.08, 0, 0.55), (0.08, 0, 0.1), l_thigh)
+    l_foot = add("foot.L", (0.08, 0, 0.1), (0.18, 0.1, 0.0), l_shin)
+
+    r_thigh = add("thigh.R", (-0.08, 0, 1.0), (-0.08, 0, 0.55), hips)
+    r_shin = add("shin.R", (-0.08, 0, 0.55), (-0.08, 0, 0.1), r_thigh)
+    r_foot = add("foot.R", (-0.08, 0, 0.1), (-0.18, 0.1, 0.0), r_shin)
+
+    bpy.ops.object.mode_set(mode="OBJECT")
+    return {"armature": arm.name, "bone_count": len(arm.data.bones)}
+
+def _select_active(obj):
+    bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.ops.object.select_all(action="DESELECT")
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+
+def tool_auto_weight_bind(object_name: str, armature_name: str, method: str = "automatic", clean_threshold: float = 0.0):
+    mesh = bpy.data.objects.get(object_name)
+    arm = bpy.data.objects.get(armature_name)
+    if not mesh or not arm:
+        return {"ok": False, "error": "Mesh or armature not found"}
+    bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.ops.object.select_all(action="DESELECT")
+    mesh.select_set(True)
+    arm.select_set(True)
+    bpy.context.view_layer.objects.active = arm
+    bind_type = "ARMATURE_AUTO" if method == "automatic" else "ARMATURE_NAME"
+    bpy.ops.object.parent_set(type=bind_type, keep_transform=True)
+    if clean_threshold > 0:
+        _select_active(mesh)
+        bpy.ops.object.vertex_group_clean(group_select_mode="ALL", limit=clean_threshold)
+    return {"ok": True, "bound": mesh.name, "armature": arm.name, "method": method}
+
+def tool_mirror_weights(object_name: str, axis: str = "X", use_topology: bool = False):
+    obj = bpy.data.objects.get(object_name)
+    if not obj:
+        return {"ok": False, "error": f"Object '{object_name}' not found"}
+    _select_active(obj)
+    bpy.ops.object.vertex_group_mirror(use_topology=use_topology, mirror_axis={"X":0,"Y":1,"Z":2}.get(axis.upper(),0), all_groups=True)
+    return {"ok": True, "mirrored": True, "axis": axis}
+
+def tool_normalize_weights(object_name: str):
+    obj = bpy.data.objects.get(object_name)
+    if not obj:
+        return {"ok": False, "error": f"Object '{object_name}' not found"}
+    _select_active(obj)
+    bpy.ops.object.vertex_group_normalize_all(lock_active=False)
+    return {"ok": True, "normalized": True}
+
+def tool_prune_small_weights(object_name: str, threshold: float = 0.001):
+    obj = bpy.data.objects.get(object_name)
+    if not obj:
+        return {"ok": False, "error": f"Object '{object_name}' not found"}
+    _select_active(obj)
+    bpy.ops.object.vertex_group_clean(group_select_mode="ALL", limit=threshold)
+    return {"ok": True, "pruned": True, "threshold": threshold}
+
+def tool_retarget_bone_map(armature_name: str):
+    arm = bpy.data.objects.get(armature_name)
+    if not arm or arm.type != "ARMATURE":
+        return {"ok": False, "error": f"Armature '{armature_name}' not found"}
+    bones = arm.data.bones
+    human_map = {
+        "hips": "hips",
+        "spine": "spine",
+        "chest": "chest",
+        "neck": "neck",
+        "head": "head",
+        "shoulder.L": "shoulder_l",
+        "upper_arm.L": "upper_arm_l",
+        "lower_arm.L": "lower_arm_l",
+        "hand.L": "hand_l",
+        "shoulder.R": "shoulder_r",
+        "upper_arm.R": "upper_arm_r",
+        "lower_arm.R": "lower_arm_r",
+        "hand.R": "hand_r",
+        "thigh.L": "thigh_l",
+        "shin.L": "shin_l",
+        "foot.L": "foot_l",
+        "thigh.R": "thigh_r",
+        "shin.R": "shin_r",
+        "foot.R": "foot_r",
+    }
+    present = {k: v for k, v in human_map.items() if k in bones}
+    return {"ok": True, "bone_map": present, "missing": [k for k in human_map if k not in bones]}
+
 def tool_quick_render_preview(output_path: str = "", resolution_x: int = 1280, resolution_y: int = 720, samples: int = 32):
     scene = bpy.context.scene
     scene.render.engine = "BLENDER_EEVEE"
@@ -1582,6 +1702,12 @@ TOOLS = {
     "quick_render_final": {"func": tool_quick_render_final, "description": "Cycles final render", "schema": {"output_path": "str?", "resolution_x": "int", "resolution_y": "int", "samples": "int", "use_denoise": "bool"}},
     "frame_selection": {"func": tool_frame_selection, "description": "Frame selected objects with active camera", "schema": {"margin": "float"}},
     "lighting_preset": {"func": tool_lighting_preset, "description": "Create basic lighting preset", "schema": {"preset": "three_point", "strength": "float"}},
+    "create_armature_humanoid": {"func": tool_create_armature_humanoid, "description": "Create a basic humanoid armature in T-pose", "schema": {"name": "str", "scale": "float"}},
+    "auto_weight_bind": {"func": tool_auto_weight_bind, "description": "Bind mesh to armature with automatic weights", "schema": {"object_name": "str", "armature_name": "str", "method": "automatic|name", "clean_threshold": "float"}},
+    "mirror_weights": {"func": tool_mirror_weights, "description": "Mirror vertex weights across an axis", "schema": {"object_name": "str", "axis": "X|Y|Z", "use_topology": "bool"}},
+    "normalize_weights": {"func": tool_normalize_weights, "description": "Normalize all vertex groups", "schema": {"object_name": "str"}},
+    "prune_small_weights": {"func": tool_prune_small_weights, "description": "Remove small vertex weights", "schema": {"object_name": "str", "threshold": "float"}},
+    "retarget_bone_map": {"func": tool_retarget_bone_map, "description": "Export a simple humanoid bone map", "schema": {"armature_name": "str"}},
     "import_file": {"func": tool_import_file, "description": "Import supported 3D file", "schema": {}},
     "export_file": {"func": tool_export_file, "description": "Export supported 3D file", "schema": {}},
     "save_blend_file": {"func": tool_save_blend_file, "description": "Save .blend file", "schema": {}},
