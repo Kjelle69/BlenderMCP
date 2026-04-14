@@ -1708,6 +1708,47 @@ def tool_rebind_auto_weights(mesh_name: str, armature_name: str, clean_threshold
         bpy.ops.object.vertex_group_clean(group_select_mode="ALL", limit=clean_threshold)
     return {"ok": True, "bound": mesh.name, "armature": arm.name}
 
+def _point_to_segment_distance(p, a, b):
+    ap = p - a
+    ab = b - a
+    t = ab.dot(ap) / (ab.dot(ab) + 1e-9)
+    t = max(0.0, min(1.0, t))
+    closest = a + t * ab
+    return (p - closest).length
+
+def tool_auto_weight_nearest_bone(mesh_name: str, armature_name: str):
+    mesh = bpy.data.objects.get(mesh_name)
+    arm = bpy.data.objects.get(armature_name)
+    if not mesh or not arm:
+        return {"ok": False, "error": "Mesh or armature not found"}
+    bpy.ops.object.mode_set(mode="OBJECT")
+    vg_map = {}
+    for bone in arm.data.bones:
+        vg = mesh.vertex_groups.get(bone.name) or mesh.vertex_groups.new(name=bone.name)
+        vg_map[bone.name] = vg
+
+    verts = mesh.data.vertices
+    bones = arm.data.bones
+    arm_mat = arm.matrix_world
+    for v in verts:
+        p_world = mesh.matrix_world @ v.co
+        best = None
+        best_bone = None
+        for b in bones:
+            head_w = arm_mat @ b.head_local
+            tail_w = arm_mat @ b.tail_local
+            d = _point_to_segment_distance(p_world, head_w, tail_w)
+            if best is None or d < best:
+                best = d
+                best_bone = b
+        if best_bone:
+            vg = vg_map[best_bone.name]
+            vg.add([v.index], 1.0, 'REPLACE')
+
+    _select_active(mesh)
+    bpy.ops.object.vertex_group_normalize_all(lock_active=False)
+    return {"ok": True, "method": "nearest_bone", "mesh": mesh.name, "armature": arm.name}
+
 def tool_fit_armature_to_mesh(mesh_name: str, armature_name: str):
     mesh = bpy.data.objects.get(mesh_name)
     arm = bpy.data.objects.get(armature_name)
@@ -1920,6 +1961,7 @@ TOOLS = {
     "apply_rot_scale": {"func": tool_apply_rot_scale, "description": "Apply rotation & scale to object", "schema": {"object_name": "str"}},
     "create_armature_from_mesh": {"func": tool_create_armature_from_mesh, "description": "Create humanoid rig scaled to mesh height", "schema": {"mesh_name": "str", "armature_name": "str"}},
     "rebind_auto_weights": {"func": tool_rebind_auto_weights, "description": "Parent mesh to armature with automatic weights", "schema": {"mesh_name": "str", "armature_name": "str", "clean_threshold": "float"}},
+    "auto_weight_nearest_bone": {"func": tool_auto_weight_nearest_bone, "description": "Naive weights: assign each vertex to nearest bone", "schema": {"mesh_name": "str", "armature_name": "str"}},
     "import_file": {"func": tool_import_file, "description": "Import supported 3D file", "schema": {}},
     "export_file": {"func": tool_export_file, "description": "Export supported 3D file", "schema": {}},
     "save_blend_file": {"func": tool_save_blend_file, "description": "Save .blend file", "schema": {}},
