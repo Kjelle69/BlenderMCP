@@ -13,3 +13,4 @@ ENV/
 htmlcov/
 modelling/
 mtec-blender.json
+tools.json

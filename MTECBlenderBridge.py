@@ -25,7 +25,7 @@ from urllib.parse import urlparse
 # ============================================================
 
 class MTECBRIDGE_Config:
-    REVISION = "v260323a"
+    REVISION = "v260414a"
     HOST = "127.0.0.1"
     PORT = 8765
     QUEUE_TIMEOUT = 60.0
@@ -1493,6 +1493,58 @@ class BridgeHTTPHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urlparse(self.path)
+        if parsed.path in ["/", "/info"]:
+            tools = [
+                (name, meta["description"], meta["schema"])
+                for name, meta in TOOLS.items()
+            ]
+            html_parts = [
+                "<!doctype html>",
+                "<html><head><meta charset='utf-8'>",
+                "<title>MTEC Blender Bridge</title>",
+                "<style>",
+                "body{font-family:Inter,Arial,sans-serif;background:#0d1117;color:#e6edf3;margin:0;padding:24px;line-height:1.5;}",
+                ".card{max-width:960px;margin:0 auto;background:#161b22;border:1px solid #30363d;border-radius:12px;padding:20px;box-shadow:0 10px 40px rgba(0,0,0,0.4);}",
+                "h1{margin:0 0 12px;font-size:26px;}",
+                ".muted{color:#8b949e;font-size:14px;}",
+                ".pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#238636;color:#e6edf3;font-size:12px;margin-left:8px;}",
+                "table{width:100%;border-collapse:collapse;margin-top:16px;}",
+                "th,td{border-bottom:1px solid #30363d;padding:8px 6px;text-align:left;vertical-align:top;font-size:14px;}",
+                "th{color:#8b949e;font-weight:600;}",
+                "code{background:#0b0f14;border:1px solid #30363d;padding:2px 4px;border-radius:6px;font-size:13px;}",
+                ".schema{color:#8b949e;font-size:13px;}",
+                "</style></head><body>",
+                "<div class='card'>",
+                f"<h1>MTEC Blender Bridge <span class='pill'>OK</span></h1>",
+                f"<div class='muted'>Revision {MTECBRIDGE_Config.REVISION} &mdash; Host {MTECBRIDGE_Config.HOST}:{MTECBRIDGE_Config.PORT}</div>",
+                f"<div class='muted'>Tools: {len(tools)}</div>",
+                "<table>",
+                "<tr><th>Tool</th><th>Beskrivning</th><th>Schema</th></tr>",
+            ]
+            for name, desc, schema in tools:
+                html_parts.append("<tr>")
+                html_parts.append(f"<td><code>{name}</code></td>")
+                html_parts.append(f"<td>{desc}</td>")
+                html_parts.append(f"<td class='schema'><pre style='margin:0;white-space:pre-wrap;'>"
+                                  f"{json.dumps(schema, ensure_ascii=False, indent=2)}</pre></td>")
+                html_parts.append("</tr>")
+            html_parts.extend([
+                "</table>",
+                "<p class='muted'>Health: <code>/health</code> &middot; Tools JSON: <code>/tools</code> &middot; Invoke: <code>/invoke</code> (POST)</p>",
+                "</div></body></html>"
+            ])
+            html = "".join(html_parts)
+            body = html.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
         if parsed.path == "/health":
             self._write_json(200, {
                 "ok": True,
