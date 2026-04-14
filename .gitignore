@@ -12,3 +12,4 @@ ENV/
 .coverage
 htmlcov/
 modelling/
+mtec-blender.json

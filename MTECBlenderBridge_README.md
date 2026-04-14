@@ -56,7 +56,7 @@ From a normal terminal outside Blender:
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
-pip install fastmcp httpx
+pip install -r requirements.txt
 ```
 
 ## 3. Start The MCP Server
@@ -88,11 +88,13 @@ $env:MTEC_BLENDER_BRIDGE_TIMEOUT = "120"
 
 Add the MCP server to your Codex MCP configuration so Codex starts the external Python process.
 
-Typical values:
+Use the template `mtec-blender.example.json` as a starting point (copy it to `mtec-blender.json`, which is git-ignored so each machine can keep its own paths).
+
+Typical values (adjust paths for your install):
 
 - Name: `mtec-blender`
-- Command: `D:\PythonProjects\BlenderMCP\.venv\Scripts\python.exe`
-- Args: `D:\PythonProjects\BlenderMCP\mtec_codex_mcp_server.py`
+- Command: `.venv\Scripts\python.exe`
+- Args: `mtec_codex_mcp_server.py`
 
 If your MCP client supports environment variables, you can also pass `MTEC_BLENDER_BRIDGE_URL` there.
 

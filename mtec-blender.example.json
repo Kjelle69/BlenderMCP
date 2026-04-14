@@ -1,0 +1,8 @@
+{
+  "name": "mtec-blender",
+  "transport": {
+    "type": "stdio",
+    "command": ".venv\\Scripts\\python.exe",
+    "args": ["mtec_codex_mcp_server.py"]
+  }
+}
