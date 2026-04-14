@@ -11,6 +11,7 @@ bl_info = {
 import bpy
 import json
 import math
+import os
 import mathutils
 import queue
 import threading
@@ -25,7 +26,7 @@ from urllib.parse import urlparse
 # ============================================================
 
 class MTECBRIDGE_Config:
-    REVISION = "v260414a"
+    REVISION = "v260414b"
     HOST = "127.0.0.1"
     PORT = 8765
     QUEUE_TIMEOUT = 60.0
@@ -1424,6 +1425,131 @@ def tool_run_python_snippet(code: str):
         "locals": serialize({k: v for k, v in execution_ns.items() if not k.startswith("__")})
     }
 
+def tool_quick_render_preview(output_path: str = "", resolution_x: int = 1280, resolution_y: int = 720, samples: int = 32):
+    scene = bpy.context.scene
+    scene.render.engine = "BLENDER_EEVEE"
+    scene.render.resolution_x = resolution_x
+    scene.render.resolution_y = resolution_y
+    scene.eevee.taa_render_samples = max(4, samples)
+    base_path = output_path or bpy.path.abspath("//render_preview.png")
+    if base_path.startswith("//"):
+        base_path = bpy.path.abspath(base_path)
+    os.makedirs(os.path.dirname(base_path), exist_ok=True)
+    scene.render.filepath = base_path
+    bpy.ops.render.render(write_still=True)
+    return {"engine": scene.render.engine, "filepath": base_path, "samples": samples}
+
+def tool_quick_render_final(output_path: str = "", resolution_x: int = 1920, resolution_y: int = 1080, samples: int = 256, use_denoise: bool = True):
+    scene = bpy.context.scene
+    scene.render.engine = "CYCLES"
+    scene.cycles.samples = samples
+    scene.cycles.use_adaptive_sampling = True
+    if hasattr(scene.cycles, "use_denoising"):
+        scene.cycles.use_denoising = use_denoise
+    scene.render.resolution_x = resolution_x
+    scene.render.resolution_y = resolution_y
+    base_path = output_path or bpy.path.abspath("//render_final.png")
+    if base_path.startswith("//"):
+        base_path = bpy.path.abspath(base_path)
+    os.makedirs(os.path.dirname(base_path), exist_ok=True)
+    scene.render.filepath = base_path
+    bpy.ops.render.render(write_still=True)
+    return {"engine": scene.render.engine, "filepath": base_path, "samples": samples, "denoise": use_denoise}
+
+def tool_frame_selection(margin: float = 1.3):
+    scene = bpy.context.scene
+    cam = scene.camera
+    if cam is None:
+        bpy.ops.object.camera_add(location=(0, -5, 3))
+        cam = bpy.context.active_object
+        scene.camera = cam
+    objs = [o for o in bpy.context.selected_objects if o.type != "CAMERA"]
+    if not objs:
+        objs = [o for o in scene.objects if o.type != "CAMERA"]
+    if not objs:
+        return {"ok": False, "error": "No objects to frame"}
+    mins = mathutils.Vector((1e9, 1e9, 1e9))
+    maxs = mathutils.Vector((-1e9, -1e9, -1e9))
+    for o in objs:
+        for v in o.bound_box:
+            w = o.matrix_world @ mathutils.Vector(v)
+            mins = mathutils.Vector((min(mins.x, w.x), min(mins.y, w.y), min(mins.z, w.z)))
+            maxs = mathutils.Vector((max(maxs.x, w.x), max(maxs.y, w.y), max(maxs.z, w.z)))
+    center = (mins + maxs) * 0.5
+    size = max((maxs - mins).length, 0.001) * 0.5 * margin
+    fov = cam.data.angle if cam.data.type == "PERSP" else math.radians(50)
+    dist = size / math.tan(fov * 0.5)
+    cam.location = center + mathutils.Vector((0, -dist * 1.1, dist * 0.6))
+    direction = center - cam.location
+    cam.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
+    return {"camera": cam.name, "center": list(center), "distance": dist, "count": len(objs)}
+
+def tool_lighting_preset(preset: str = "three_point", strength: float = 1000.0):
+    scene = bpy.context.scene
+    created = []
+    if preset == "three_point":
+        positions = {
+            "Key": (4, -4, 4),
+            "Fill": (-3, -2, 3),
+            "Rim": (-4, 4, 4),
+        }
+        factors = {"Key": 1.0, "Fill": 0.5, "Rim": 0.8}
+        for name, loc in positions.items():
+            bpy.ops.object.light_add(type="AREA", location=loc, radius=1.5)
+            light = bpy.context.active_object
+            light.name = f"LP_{name}"
+            light.data.energy = strength * factors[name]
+            created.append(light.name)
+    return {"preset": preset, "lights": created, "strength": strength}
+
+def tool_apply_mod_stack(object_name: str):
+    obj = bpy.data.objects.get(object_name)
+    if not obj:
+        return {"ok": False, "error": f"Object '{object_name}' not found"}
+    applied = []
+    for mod in list(obj.modifiers):
+        bpy.context.view_layer.objects.active = obj
+        bpy.ops.object.modifier_apply(modifier=mod.name)
+        applied.append(mod.name)
+    return {"ok": True, "applied": applied}
+
+def tool_duplicate_array_radial(object_name: str, count: int = 8, radius: float = 2.0):
+    obj = bpy.data.objects.get(object_name)
+    if not obj:
+        return {"ok": False, "error": f"Object '{object_name}' not found"}
+    created = []
+    for i in range(count):
+        dup = obj.copy()
+        dup.data = obj.data.copy()
+        angle = (i / count) * 2 * math.pi
+        dup.location = mathutils.Vector((math.cos(angle) * radius, math.sin(angle) * radius, obj.location.z))
+        bpy.context.collection.objects.link(dup)
+        created.append(dup.name)
+    return {"ok": True, "created": created}
+
+def tool_set_world_color_or_hdri(color=None, hdri_path: str = "", strength: float = 1.0):
+    world = bpy.context.scene.world or bpy.data.worlds.new("World")
+    bpy.context.scene.world = world
+    world.use_nodes = True
+    nodes = world.node_tree.nodes
+    links = world.node_tree.links
+    background = nodes.get("Background") or nodes.new("ShaderNodeBackground")
+    output = nodes.get("World Output") or nodes.new("ShaderNodeOutputWorld")
+    links.new(background.outputs["Background"], output.inputs["Surface"])
+    if hdri_path:
+        env = nodes.get("Environment Texture") or nodes.new("ShaderNodeTexEnvironment")
+        env.image = bpy.data.images.load(hdri_path)
+        env.image.colorspace_settings.name = "sRGB"
+        links.new(env.outputs["Color"], background.inputs["Color"])
+    elif color:
+        background.inputs["Color"].default_value = (color[0], color[1], color[2], 1)
+    background.inputs["Strength"].default_value = strength
+    return {
+        "world": world.name,
+        "hdri": bool(hdri_path),
+        "strength": strength,
+        "color": list(color) if color else None,
+    }
 TOOLS = {
     "get_scene_info": {"func": tool_get_scene_info, "description": "Basic scene information", "schema": {}},
     "set_bridge_options": {"func": tool_set_bridge_options, "description": "Configure bridge UI/runtime options", "schema": {}},
@@ -1452,6 +1578,10 @@ TOOLS = {
     "boolean_operation": {"func": tool_boolean_operation, "description": "Boolean between two objects", "schema": {}},
     "configure_render_settings": {"func": tool_configure_render_settings, "description": "Configure render settings", "schema": {}},
     "render_image": {"func": tool_render_image, "description": "Render still image", "schema": {}},
+    "quick_render_preview": {"func": tool_quick_render_preview, "description": "Fast Eevee preview render", "schema": {"output_path": "str?", "resolution_x": "int", "resolution_y": "int", "samples": "int"}},
+    "quick_render_final": {"func": tool_quick_render_final, "description": "Cycles final render", "schema": {"output_path": "str?", "resolution_x": "int", "resolution_y": "int", "samples": "int", "use_denoise": "bool"}},
+    "frame_selection": {"func": tool_frame_selection, "description": "Frame selected objects with active camera", "schema": {"margin": "float"}},
+    "lighting_preset": {"func": tool_lighting_preset, "description": "Create basic lighting preset", "schema": {"preset": "three_point", "strength": "float"}},
     "import_file": {"func": tool_import_file, "description": "Import supported 3D file", "schema": {}},
     "export_file": {"func": tool_export_file, "description": "Export supported 3D file", "schema": {}},
     "save_blend_file": {"func": tool_save_blend_file, "description": "Save .blend file", "schema": {}},
@@ -1466,6 +1596,9 @@ TOOLS = {
     "bake_to_frame": {"func": tool_bake_to_frame, "description": "Bake physics caches through a frame range", "schema": {"frame_end": "int"}},
     "add_impactor": {"func": tool_add_impactor, "description": "Create a heavy rigid body impactor sphere", "schema": {}},
     "build_and_smash_demo": {"func": tool_build_and_smash_demo, "description": "Build a lit rigid-body cube demo scene with cinematic reveal", "schema": {}},
+    "apply_mod_stack": {"func": tool_apply_mod_stack, "description": "Apply all modifiers on an object", "schema": {"object_name": "str"}},
+    "duplicate_array_radial": {"func": tool_duplicate_array_radial, "description": "Duplicate object radially", "schema": {"object_name": "str", "count": "int", "radius": "float"}},
+    "set_world_color_or_hdri": {"func": tool_set_world_color_or_hdri, "description": "Set world background color or HDRI", "schema": {"color": "[r,g,b]", "hdri_path": "str", "strength": "float"}},
     "call_operator": {"func": tool_call_operator, "description": "Generic bpy.ops bridge", "schema": {}},
     "run_python_snippet": {"func": tool_run_python_snippet, "description": "Execute Python in Blender context", "schema": {"code": "Python source string"}},
 }
