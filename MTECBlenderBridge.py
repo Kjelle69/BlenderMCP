@@ -26,7 +26,7 @@ from urllib.parse import urlparse
 # ============================================================
 
 class MTECBRIDGE_Config:
-    REVISION = "v260414d"
+    REVISION = "v260414e"
     HOST = "127.0.0.1"
     PORT = 8765
     QUEUE_TIMEOUT = 60.0
@@ -1547,6 +1547,60 @@ def tool_retarget_bone_map(armature_name: str):
     present = {k: v for k, v in human_map.items() if k in bones}
     return {"ok": True, "bone_map": present, "missing": [k for k in human_map if k not in bones]}
 
+def tool_setup_simple_ik(armature_name: str, create_targets: bool = True, chain_arm: int = 2, chain_leg: int = 2):
+    arm = bpy.data.objects.get(armature_name)
+    if not arm or arm.type != "ARMATURE":
+        return {"ok": False, "error": f"Armature '{armature_name}' not found"}
+
+    bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.ops.object.select_all(action="DESELECT")
+    arm.select_set(True)
+    bpy.context.view_layer.objects.active = arm
+    bpy.ops.object.mode_set(mode="POSE")
+
+    scene = bpy.context.scene
+    created_targets = []
+
+    def add_ik(bone_name, chain_len, offset=(0.2, 0, 0)):
+        pb = arm.pose.bones.get(bone_name)
+        if not pb:
+            return None
+        target_obj = None
+        if create_targets:
+            empty = bpy.data.objects.new(f"IK_{bone_name}", None)
+            empty.empty_display_type = 'SPHERE'
+            empty.empty_display_size = 0.08
+            scene.collection.objects.link(empty)
+            world_loc = arm.matrix_world @ pb.tail
+            empty.location = world_loc + mathutils.Vector(offset)
+            target_obj = empty
+            created_targets.append(empty.name)
+        ik = pb.constraints.new(type='IK')
+        if target_obj:
+            ik.target = target_obj
+        ik.chain_count = chain_len
+        return target_obj.name if target_obj else None
+
+    arm_targets = []
+    leg_targets = []
+    for bn in ("hand.L", "hand.R"):
+        tgt = add_ik(bn, chain_arm, offset=(0.15 if ".L" in bn else -0.15, 0, 0))
+        if tgt:
+            arm_targets.append(tgt)
+    for bn in ("foot.L", "foot.R"):
+        tgt = add_ik(bn, chain_leg, offset=(0.05 if ".L" in bn else -0.05, 0.1, 0))
+        if tgt:
+            leg_targets.append(tgt)
+
+    bpy.ops.object.mode_set(mode="OBJECT")
+    return {
+        "ok": True,
+        "armature": arm.name,
+        "targets": created_targets,
+        "arm_targets": arm_targets,
+        "leg_targets": leg_targets,
+    }
+
 def tool_quick_render_preview(output_path: str = "", resolution_x: int = 1280, resolution_y: int = 720, samples: int = 32):
     scene = bpy.context.scene
     scene.render.engine = "BLENDER_EEVEE"
@@ -1710,6 +1764,7 @@ TOOLS = {
     "normalize_weights": {"func": tool_normalize_weights, "description": "Normalize all vertex groups", "schema": {"object_name": "str"}},
     "prune_small_weights": {"func": tool_prune_small_weights, "description": "Remove small vertex weights", "schema": {"object_name": "str", "threshold": "float"}},
     "retarget_bone_map": {"func": tool_retarget_bone_map, "description": "Export a simple humanoid bone map", "schema": {"armature_name": "str"}},
+    "setup_simple_ik": {"func": tool_setup_simple_ik, "description": "Add simple IK constraints for hands/feet", "schema": {"armature_name": "str", "create_targets": "bool", "chain_arm": "int", "chain_leg": "int"}},
     "import_file": {"func": tool_import_file, "description": "Import supported 3D file", "schema": {}},
     "export_file": {"func": tool_export_file, "description": "Export supported 3D file", "schema": {}},
     "save_blend_file": {"func": tool_save_blend_file, "description": "Save .blend file", "schema": {}},
