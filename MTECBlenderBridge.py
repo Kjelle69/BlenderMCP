@@ -1831,8 +1831,20 @@ def tool_attach_armature_modifier(mesh_name: str, armature_name: str, make_paren
         arm_mod = mesh.modifiers.new(name="Armature", type='ARMATURE')
     arm_mod.object = arm
     if make_parent:
-        mesh.parent = arm
+    mesh.parent = arm
     return {"ok": True, "mesh": mesh.name, "armature": arm.name, "parented": make_parent}
+
+def tool_smooth_weights(mesh_name: str, factor: float = 0.5, repeat: int = 3):
+    mesh = bpy.data.objects.get(mesh_name)
+    if not mesh or mesh.type != 'MESH':
+        return {"ok": False, "error": f"Mesh '{mesh_name}' not found"}
+    bpy.ops.object.select_all(action="DESELECT")
+    mesh.select_set(True)
+    bpy.context.view_layer.objects.active = mesh
+    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.vertex_group_smooth(group_select_mode='ALL', factor=factor, repeat=repeat, expand=0)
+    bpy.ops.object.vertex_group_normalize_all(lock_active=False)
+    return {"ok": True, "mesh": mesh.name, "factor": factor, "repeat": repeat}
 
 def tool_fit_armature_to_mesh(mesh_name: str, armature_name: str):
     mesh = bpy.data.objects.get(mesh_name)
@@ -2049,6 +2061,7 @@ TOOLS = {
     "auto_weight_nearest_bone": {"func": tool_auto_weight_nearest_bone, "description": "Naive weights: assign each vertex to nearest bone", "schema": {"mesh_name": "str", "armature_name": "str"}},
     "auto_weight_two_nearest": {"func": tool_auto_weight_two_nearest, "description": "Weights to two closest bones (inverse distance)", "schema": {"mesh_name": "str", "armature_name": "str"}},
     "attach_armature_modifier": {"func": tool_attach_armature_modifier, "description": "Add/refresh armature modifier and optional parenting", "schema": {"mesh_name": "str", "armature_name": "str", "make_parent": "bool"}},
+    "smooth_weights": {"func": tool_smooth_weights, "description": "Smooth and normalize vertex weights", "schema": {"mesh_name": "str", "factor": "float", "repeat": "int"}},
     "import_file": {"func": tool_import_file, "description": "Import supported 3D file", "schema": {}},
     "export_file": {"func": tool_export_file, "description": "Export supported 3D file", "schema": {}},
     "save_blend_file": {"func": tool_save_blend_file, "description": "Save .blend file", "schema": {}},
