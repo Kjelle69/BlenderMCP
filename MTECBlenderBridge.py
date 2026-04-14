@@ -1426,7 +1426,7 @@ def tool_run_python_snippet(code: str):
     }
 
 def tool_create_armature_humanoid(name: str = "HumanoidRig", scale: float = 1.0):
-    bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.ops.object.mode_set(mode="OBJECT", toggle=False)
     bpy.ops.object.select_all(action="DESELECT")
     bpy.ops.object.armature_add(enter_editmode=True, location=(0, 0, 0))
     arm = bpy.context.active_object
