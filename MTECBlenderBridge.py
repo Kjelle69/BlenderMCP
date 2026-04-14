@@ -1831,7 +1831,7 @@ def tool_attach_armature_modifier(mesh_name: str, armature_name: str, make_paren
         arm_mod = mesh.modifiers.new(name="Armature", type='ARMATURE')
     arm_mod.object = arm
     if make_parent:
-    mesh.parent = arm
+        mesh.parent = arm
     return {"ok": True, "mesh": mesh.name, "armature": arm.name, "parented": make_parent}
 
 def tool_smooth_weights(mesh_name: str, factor: float = 0.5, repeat: int = 3):
