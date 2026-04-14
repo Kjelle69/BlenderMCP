@@ -1499,7 +1499,7 @@ def tool_mirror_weights(object_name: str, axis: str = "X", use_topology: bool = 
     if not obj:
         return {"ok": False, "error": f"Object '{object_name}' not found"}
     _select_active(obj)
-    bpy.ops.object.vertex_group_mirror(use_topology=use_topology, mirror_axis={"X":0,"Y":1,"Z":2}.get(axis.upper(),0), all_groups=True)
+    bpy.ops.object.vertex_group_mirror(use_topology=use_topology, all_groups=True)
     return {"ok": True, "mirrored": True, "axis": axis}
 
 def tool_normalize_weights(object_name: str):
