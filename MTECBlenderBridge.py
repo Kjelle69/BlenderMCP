@@ -26,7 +26,7 @@ from urllib.parse import urlparse
 # ============================================================
 
 class MTECBRIDGE_Config:
-    REVISION = "v260414e"
+    REVISION = "v260414f"
     HOST = "127.0.0.1"
     PORT = 8765
     QUEUE_TIMEOUT = 60.0
@@ -1601,6 +1601,49 @@ def tool_setup_simple_ik(armature_name: str, create_targets: bool = True, chain_
         "leg_targets": leg_targets,
     }
 
+def tool_fit_armature_to_mesh(mesh_name: str, armature_name: str):
+    mesh = bpy.data.objects.get(mesh_name)
+    arm = bpy.data.objects.get(armature_name)
+    if not mesh:
+        return {"ok": False, "error": f"Mesh '{mesh_name}' not found"}
+    if not arm or arm.type != "ARMATURE":
+        return {"ok": False, "error": f"Armature '{armature_name}' not found"}
+
+    # Compute mesh bbox in world space
+    world_verts = [mesh.matrix_world @ mathutils.Vector(v) for v in mesh.bound_box]
+    mins = mathutils.Vector((min(v.x for v in world_verts),
+                             min(v.y for v in world_verts),
+                             min(v.z for v in world_verts)))
+    maxs = mathutils.Vector((max(v.x for v in world_verts),
+                             max(v.y for v in world_verts),
+                             max(v.z for v in world_verts)))
+    center = (mins + maxs) * 0.5
+    height = maxs.z - mins.z
+
+    # Template rig height ~1.9 Blender units (feet to head in our T-pose)
+    template_height = 1.9
+    scale = height / template_height if template_height > 0 else 1.0
+
+    bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.ops.object.select_all(action="DESELECT")
+    arm.select_set(True)
+    bpy.context.view_layer.objects.active = arm
+
+    # Place origin at mesh feet, scale uniformly, then move hips to mesh center X/Y and feet to mesh min Z
+    arm.location = (center.x, center.y, mins.z)
+    arm.scale = (scale, scale, scale)
+
+    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+
+    return {
+        "ok": True,
+        "armature": arm.name,
+        "mesh": mesh.name,
+        "scale": scale,
+        "mesh_height": height,
+        "arm_location": list(arm.location),
+    }
+
 def tool_quick_render_preview(output_path: str = "", resolution_x: int = 1280, resolution_y: int = 720, samples: int = 32):
     scene = bpy.context.scene
     scene.render.engine = "BLENDER_EEVEE"
@@ -1765,6 +1808,7 @@ TOOLS = {
     "prune_small_weights": {"func": tool_prune_small_weights, "description": "Remove small vertex weights", "schema": {"object_name": "str", "threshold": "float"}},
     "retarget_bone_map": {"func": tool_retarget_bone_map, "description": "Export a simple humanoid bone map", "schema": {"armature_name": "str"}},
     "setup_simple_ik": {"func": tool_setup_simple_ik, "description": "Add simple IK constraints for hands/feet", "schema": {"armature_name": "str", "create_targets": "bool", "chain_arm": "int", "chain_leg": "int"}},
+    "fit_armature_to_mesh": {"func": tool_fit_armature_to_mesh, "description": "Scale/position armature to mesh bounds", "schema": {"mesh_name": "str", "armature_name": "str"}},
     "import_file": {"func": tool_import_file, "description": "Import supported 3D file", "schema": {}},
     "export_file": {"func": tool_export_file, "description": "Export supported 3D file", "schema": {}},
     "save_blend_file": {"func": tool_save_blend_file, "description": "Save .blend file", "schema": {}},
