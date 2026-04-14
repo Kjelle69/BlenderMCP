@@ -26,7 +26,7 @@ from urllib.parse import urlparse
 # ============================================================
 
 class MTECBRIDGE_Config:
-    REVISION = "v260414c"
+    REVISION = "v260414d"
     HOST = "127.0.0.1"
     PORT = 8765
     QUEUE_TIMEOUT = 60.0
@@ -1465,6 +1465,9 @@ def tool_create_armature_humanoid(name: str = "HumanoidRig", scale: float = 1.0)
     r_shin = add("shin.R", (-0.08, 0, 0.55), (-0.08, 0, 0.1), r_thigh)
     r_foot = add("foot.R", (-0.08, 0, 0.1), (-0.18, 0.1, 0.0), r_shin)
 
+    bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.context.view_layer.objects.active = arm
+    arm.select_set(True)
     bpy.ops.object.mode_set(mode="OBJECT")
     return {"armature": arm.name, "bone_count": len(arm.data.bones)}
 
