@@ -2,6 +2,8 @@
 
 End-to-end guide to run Codex (eller annan MCP-klient) mot Blender med FastMCP.
 
+![Riggad figur i Blender](doc/rig-demo.png)
+
 ## Innehåll
 - Vad som startas
 - Snabbstart (från tom maskin)
