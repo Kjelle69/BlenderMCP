@@ -1605,10 +1605,10 @@ def tool_reset_mesh_rigging(mesh_name: str):
     mesh = bpy.data.objects.get(mesh_name)
     if not mesh:
         return {"ok": False, "error": f"Mesh '{mesh_name}' not found"}
-    bpy.ops.object.mode_set(mode="OBJECT")
     bpy.ops.object.select_all(action="DESELECT")
     mesh.select_set(True)
     bpy.context.view_layer.objects.active = mesh
+    bpy.ops.object.mode_set(mode="OBJECT")
     try:
         bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
     except Exception:
@@ -1623,10 +1623,10 @@ def tool_apply_rot_scale(object_name: str):
     obj = bpy.data.objects.get(object_name)
     if not obj:
         return {"ok": False, "error": f"Object '{object_name}' not found"}
-    bpy.ops.object.mode_set(mode="OBJECT")
     bpy.ops.object.select_all(action="DESELECT")
     obj.select_set(True)
     bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.mode_set(mode="OBJECT")
     bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
     return {"ok": True, "applied": object_name}
 
@@ -1646,8 +1646,8 @@ def tool_create_armature_from_mesh(mesh_name: str, armature_name: str = "Humanoi
     template_height = 1.8
     scale = height / template_height if template_height > 0 else 1.0
 
-    bpy.ops.object.mode_set(mode="OBJECT")
     bpy.ops.object.select_all(action="DESELECT")
+    bpy.context.view_layer.objects.active = None
     bpy.ops.object.armature_add(enter_editmode=True, location=(center.x, center.y, mins.z))
     arm = bpy.context.active_object
     arm.name = armature_name
