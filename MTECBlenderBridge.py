@@ -1747,7 +1747,35 @@ def tool_auto_weight_nearest_bone(mesh_name: str, armature_name: str):
 
     _select_active(mesh)
     bpy.ops.object.vertex_group_normalize_all(lock_active=False)
+    # ensure armature modifier exists
+    arm_mod = None
+    for m in mesh.modifiers:
+        if m.type == 'ARMATURE':
+            arm_mod = m
+            break
+    if arm_mod is None:
+        arm_mod = mesh.modifiers.new(name="Armature", type='ARMATURE')
+    arm_mod.object = arm
+    # parent mesh to armature for convenience
+    mesh.parent = arm
     return {"ok": True, "method": "nearest_bone", "mesh": mesh.name, "armature": arm.name}
+
+def tool_attach_armature_modifier(mesh_name: str, armature_name: str, make_parent: bool = True):
+    mesh = bpy.data.objects.get(mesh_name)
+    arm = bpy.data.objects.get(armature_name)
+    if not mesh or not arm:
+        return {"ok": False, "error": "Mesh or armature not found"}
+    arm_mod = None
+    for m in mesh.modifiers:
+        if m.type == 'ARMATURE':
+            arm_mod = m
+            break
+    if arm_mod is None:
+        arm_mod = mesh.modifiers.new(name="Armature", type='ARMATURE')
+    arm_mod.object = arm
+    if make_parent:
+        mesh.parent = arm
+    return {"ok": True, "mesh": mesh.name, "armature": arm.name, "parented": make_parent}
 
 def tool_fit_armature_to_mesh(mesh_name: str, armature_name: str):
     mesh = bpy.data.objects.get(mesh_name)
@@ -1962,6 +1990,7 @@ TOOLS = {
     "create_armature_from_mesh": {"func": tool_create_armature_from_mesh, "description": "Create humanoid rig scaled to mesh height", "schema": {"mesh_name": "str", "armature_name": "str"}},
     "rebind_auto_weights": {"func": tool_rebind_auto_weights, "description": "Parent mesh to armature with automatic weights", "schema": {"mesh_name": "str", "armature_name": "str", "clean_threshold": "float"}},
     "auto_weight_nearest_bone": {"func": tool_auto_weight_nearest_bone, "description": "Naive weights: assign each vertex to nearest bone", "schema": {"mesh_name": "str", "armature_name": "str"}},
+    "attach_armature_modifier": {"func": tool_attach_armature_modifier, "description": "Add/refresh armature modifier and optional parenting", "schema": {"mesh_name": "str", "armature_name": "str", "make_parent": "bool"}},
     "import_file": {"func": tool_import_file, "description": "Import supported 3D file", "schema": {}},
     "export_file": {"func": tool_export_file, "description": "Export supported 3D file", "schema": {}},
     "save_blend_file": {"func": tool_save_blend_file, "description": "Save .blend file", "schema": {}},
