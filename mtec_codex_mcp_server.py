@@ -145,6 +145,28 @@ def create_mesh_object(
     )
 
 @mcp.tool()
+def create_mesh_from_pydata(
+    name: str,
+    vertices: list[list[float]],
+    edges: list[list[int]] | None = None,
+    faces: list[list[int]] | None = None,
+    location: list[float] | None = None,
+    rotation_deg: list[float] | None = None,
+    scale: list[float] | None = None,
+) -> dict:
+    """Create a Blender mesh from explicit vertices/edges/faces."""
+    return bridge_invoke(
+        "create_mesh_from_pydata",
+        name=name,
+        vertices=vertices,
+        edges=edges,
+        faces=faces,
+        location=location,
+        rotation_deg=rotation_deg,
+        scale=scale,
+    )
+
+@mcp.tool()
 def create_curve_object(
     curve_type: str = "bezier",
     name: str = "Curve",
@@ -291,6 +313,103 @@ def create_material(
 def assign_material(object_name: str, material_name: str) -> dict:
     """Assign a material to an object."""
     return bridge_invoke("assign_material", object_name=object_name, material_name=material_name)
+
+@mcp.tool()
+def create_blueprint_plane(
+    image_path: str,
+    view: str = "side",
+    name: str = "",
+    real_width: float | None = None,
+    real_height: float | None = None,
+    plane_offset: float = 0.0,
+    location: list[float] | None = None,
+    opacity: float = 0.55,
+    collection: str = "Blueprints",
+    lock: bool = True,
+    show_in_front: bool = True,
+) -> dict:
+    """Create a calibrated side/top/front image plane for blueprint modelling."""
+    return bridge_invoke(
+        "create_blueprint_plane",
+        image_path=image_path,
+        view=view,
+        name=name,
+        real_width=real_width,
+        real_height=real_height,
+        plane_offset=plane_offset,
+        location=location,
+        opacity=opacity,
+        collection=collection,
+        lock=lock,
+        show_in_front=show_in_front,
+    )
+
+@mcp.tool()
+def setup_blueprint_scene(
+    blueprints: list[dict],
+    collection: str = "Blueprints",
+    hide_existing: bool = False,
+) -> dict:
+    """Create multiple calibrated blueprint planes."""
+    return bridge_invoke(
+        "setup_blueprint_scene",
+        blueprints=blueprints,
+        collection=collection,
+        hide_existing=hide_existing,
+    )
+
+@mcp.tool()
+def create_trace_curve(
+    name: str,
+    view: str = "side",
+    points: list[list[float]] | None = None,
+    plane_offset: float = 0.0,
+    curve_type: str = "bezier",
+    cyclic: bool = False,
+    bevel_depth: float = 0.01,
+    collection: str = "Blueprint Traces",
+) -> dict:
+    """Create a trace curve on a side/top/front blueprint plane."""
+    return bridge_invoke(
+        "create_trace_curve",
+        name=name,
+        view=view,
+        points=points,
+        plane_offset=plane_offset,
+        curve_type=curve_type,
+        cyclic=cyclic,
+        bevel_depth=bevel_depth,
+        collection=collection,
+    )
+
+@mcp.tool()
+def create_measurement(
+    name: str,
+    point_a: list[float],
+    point_b: list[float],
+    view: str = "side",
+    plane_offset: float = 0.0,
+    collection: str = "Blueprint Measurements",
+) -> dict:
+    """Create a visible measurement line and return its scene-unit length."""
+    return bridge_invoke(
+        "create_measurement",
+        name=name,
+        point_a=point_a,
+        point_b=point_b,
+        view=view,
+        plane_offset=plane_offset,
+        collection=collection,
+    )
+
+@mcp.tool()
+def sample_curve_points(object_name: str, samples_per_spline: int = 64) -> dict:
+    """Sample world-space points from a Blender curve."""
+    return bridge_invoke(
+        "sample_curve_points",
+        object_name=object_name,
+        samples_per_spline=samples_per_spline,
+    )
 
 @mcp.tool()
 def set_origin(

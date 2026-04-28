@@ -26,7 +26,7 @@ from urllib.parse import urlparse
 # ============================================================
 
 class MTECBRIDGE_Config:
-    REVISION = "v260414g"
+    REVISION = "v260428a"
     HOST = "127.0.0.1"
     PORT = 8765
     QUEUE_TIMEOUT = 60.0
@@ -632,6 +632,42 @@ def tool_create_mesh_object(
     maybe_focus_view_on_selection()
     return object_summary(obj)
 
+def tool_create_mesh_from_pydata(
+    name: str,
+    vertices,
+    edges = None,
+    faces = None,
+    location = None,
+    rotation_deg = None,
+    scale = None,
+):
+    if not vertices:
+        raise ValueError("vertices must contain at least one vertex")
+
+    location = location or [0.0, 0.0, 0.0]
+    rotation_deg = rotation_deg or [0.0, 0.0, 0.0]
+    scale = scale or [1.0, 1.0, 1.0]
+
+    mesh = bpy.data.meshes.new(name=f"{name}_mesh")
+    mesh.from_pydata(vertices, edges or [], faces or [])
+    mesh.update()
+    mesh.validate(verbose=False)
+
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.scene.collection.objects.link(obj)
+    obj.location = location
+    obj.rotation_euler = [math.radians(v) for v in rotation_deg]
+    obj.scale = scale
+
+    maybe_focus_view_on_selection()
+    summary = object_summary(obj)
+    summary.update({
+        "vertex_count": len(mesh.vertices),
+        "edge_count": len(mesh.edges),
+        "face_count": len(mesh.polygons),
+    })
+    return summary
+
 def tool_create_curve_object(
     curve_type: str = "bezier",
     name: str = "Curve",
@@ -850,6 +886,335 @@ def tool_assign_material(object_name: str, material_name: str):
     else:
         obj.data.materials[0] = mat
     return {"object": object_name, "material": material_name}
+
+def _ensure_collection(name: str):
+    collection = bpy.data.collections.get(name)
+    if collection:
+        return collection
+    collection = bpy.data.collections.new(name)
+    bpy.context.scene.collection.children.link(collection)
+    return collection
+
+def _link_to_collection(obj, collection_name: str, unlink_others: bool = False):
+    if not collection_name:
+        return obj
+    collection = _ensure_collection(collection_name)
+    if obj not in collection.objects[:]:
+        collection.objects.link(obj)
+    if unlink_others:
+        for existing in list(obj.users_collection):
+            if existing != collection:
+                existing.objects.unlink(obj)
+    return obj
+
+def _blueprint_material(name: str, image_path: str, opacity: float = 0.55):
+    if not os.path.exists(image_path):
+        raise ValueError(f"Image path does not exist: {image_path}")
+
+    image = bpy.data.images.load(image_path, check_existing=True)
+    mat = bpy.data.materials.get(name) or bpy.data.materials.new(name=name)
+    mat.use_nodes = True
+    mat.blend_method = 'BLEND'
+    mat.show_transparent_back = True
+    mat.use_screen_refraction = False
+
+    nodes = mat.node_tree.nodes
+    links = mat.node_tree.links
+    nodes.clear()
+
+    out = nodes.new(type='ShaderNodeOutputMaterial')
+    out.location = (500, 0)
+    bsdf = nodes.new(type='ShaderNodeBsdfPrincipled')
+    bsdf.location = (250, 0)
+    tex = nodes.new(type='ShaderNodeTexImage')
+    tex.location = (0, 80)
+    tex.image = image
+
+    bsdf.inputs['Base Color'].default_value = (1, 1, 1, opacity)
+    bsdf.inputs['Alpha'].default_value = opacity
+    bsdf.inputs['Roughness'].default_value = 0.8
+    links.new(tex.outputs['Color'], bsdf.inputs['Base Color'])
+    links.new(bsdf.outputs['BSDF'], out.inputs['Surface'])
+    return mat, image
+
+def _blueprint_plane_vertices(view: str, width: float, height: float, plane_offset: float):
+    half_w = width * 0.5
+    half_h = height * 0.5
+    view = view.lower()
+    if view == "side":
+        # Side view: image X -> world X, image Y -> world Z, constant Y.
+        return [
+            (-half_w, plane_offset, -half_h),
+            ( half_w, plane_offset, -half_h),
+            ( half_w, plane_offset,  half_h),
+            (-half_w, plane_offset,  half_h),
+        ]
+    if view == "top":
+        # Top view: image X -> world X, image Y -> world Y, constant Z.
+        return [
+            (-half_w, -half_h, plane_offset),
+            ( half_w, -half_h, plane_offset),
+            ( half_w,  half_h, plane_offset),
+            (-half_w,  half_h, plane_offset),
+        ]
+    if view == "front":
+        # Front view: image X -> world Y, image Y -> world Z, constant X.
+        return [
+            (plane_offset, -half_w, -half_h),
+            (plane_offset,  half_w, -half_h),
+            (plane_offset,  half_w,  half_h),
+            (plane_offset, -half_w,  half_h),
+        ]
+    raise ValueError("view must be one of: side, top, front")
+
+def _map_blueprint_point(view: str, point, plane_offset: float = 0.0):
+    if len(point) == 3:
+        return [float(point[0]), float(point[1]), float(point[2])]
+    if len(point) != 2:
+        raise ValueError("Blueprint trace points must be [u, v] or [x, y, z]")
+    u = float(point[0])
+    v = float(point[1])
+    view = view.lower()
+    if view == "side":
+        return [u, plane_offset, v]
+    if view == "top":
+        return [u, v, plane_offset]
+    if view == "front":
+        return [plane_offset, u, v]
+    raise ValueError("view must be one of: side, top, front")
+
+def tool_create_blueprint_plane(
+    image_path: str,
+    view: str = "side",
+    name: str = "",
+    real_width: float | None = None,
+    real_height: float | None = None,
+    plane_offset: float = 0.0,
+    location = None,
+    opacity: float = 0.55,
+    collection: str = "Blueprints",
+    lock: bool = True,
+    show_in_front: bool = True,
+):
+    """Create a calibrated image plane for blueprint modelling.
+
+    If only one of real_width/real_height is provided, the other is inferred
+    from the image aspect ratio. Units are Blender scene units.
+    """
+    if not image_path:
+        raise ValueError("image_path is required")
+
+    mat, image = _blueprint_material(
+        f"{name or os.path.splitext(os.path.basename(image_path))[0]}_blueprint_mat",
+        image_path,
+        opacity=max(0.0, min(1.0, opacity)),
+    )
+    pixel_width, pixel_height = image.size
+    if not pixel_width or not pixel_height:
+        raise ValueError(f"Could not read image size for {image_path}")
+
+    aspect = pixel_width / pixel_height
+    if real_width is None and real_height is None:
+        real_width = float(pixel_width) / 100.0
+        real_height = float(pixel_height) / 100.0
+    elif real_width is None:
+        real_height = float(real_height)
+        real_width = real_height * aspect
+    elif real_height is None:
+        real_width = float(real_width)
+        real_height = real_width / aspect
+    else:
+        real_width = float(real_width)
+        real_height = float(real_height)
+
+    verts = _blueprint_plane_vertices(view, real_width, real_height, plane_offset)
+    mesh = bpy.data.meshes.new(f"{name or view}_blueprint_mesh")
+    mesh.from_pydata(verts, [], [(0, 1, 2, 3)])
+    mesh.update()
+    mesh.uv_layers.new(name="UVMap")
+    uv_data = mesh.uv_layers.active.data
+    for loop, uv in zip(uv_data, [(0, 0), (1, 0), (1, 1), (0, 1)]):
+        loop.uv = uv
+
+    obj_name = name or f"Blueprint_{view}_{os.path.splitext(os.path.basename(image_path))[0]}"
+    obj = bpy.data.objects.new(obj_name, mesh)
+    bpy.context.scene.collection.objects.link(obj)
+    obj.data.materials.append(mat)
+    if location:
+        obj.location = location
+    obj.display_type = 'TEXTURED'
+    obj.show_in_front = show_in_front
+    obj.lock_location = (lock, lock, lock)
+    obj.lock_rotation = (lock, lock, lock)
+    obj.lock_scale = (lock, lock, lock)
+    obj["mtec_blueprint_view"] = view.lower()
+    obj["mtec_blueprint_image_path"] = image_path
+    obj["mtec_blueprint_real_width"] = real_width
+    obj["mtec_blueprint_real_height"] = real_height
+    obj["mtec_blueprint_plane_offset"] = plane_offset
+
+    _link_to_collection(obj, collection, unlink_others=True)
+    return {
+        **object_summary(obj),
+        "image_path": image_path,
+        "image_pixels": [pixel_width, pixel_height],
+        "view": view.lower(),
+        "real_width": real_width,
+        "real_height": real_height,
+        "plane_offset": plane_offset,
+        "collection": collection,
+    }
+
+def tool_setup_blueprint_scene(
+    blueprints,
+    collection: str = "Blueprints",
+    hide_existing: bool = False,
+):
+    """Create several calibrated blueprint planes.
+
+    blueprints is a list of dictionaries accepted by create_blueprint_plane:
+    image_path, view, name, real_width/real_height, plane_offset, location,
+    opacity, lock, show_in_front.
+    """
+    if not isinstance(blueprints, list) or not blueprints:
+        raise ValueError("blueprints must be a non-empty list")
+
+    if hide_existing:
+        existing = bpy.data.collections.get(collection)
+        if existing:
+            for obj in existing.objects:
+                obj.hide_viewport = True
+                obj.hide_render = True
+
+    created = []
+    for item in blueprints:
+        if not isinstance(item, dict):
+            raise ValueError("Each blueprint entry must be a dictionary")
+        kwargs = dict(item)
+        kwargs.setdefault("collection", collection)
+        created.append(tool_create_blueprint_plane(**kwargs))
+
+    return {"collection": collection, "count": len(created), "blueprints": created}
+
+def tool_create_trace_curve(
+    name: str,
+    view: str = "side",
+    points = None,
+    plane_offset: float = 0.0,
+    curve_type: str = "bezier",
+    cyclic: bool = False,
+    bevel_depth: float = 0.01,
+    collection: str = "Blueprint Traces",
+):
+    """Create a trace curve on a blueprint plane.
+
+    2D points are mapped by view:
+    side [x,z], top [x,y], front [y,z]. 3D points pass through unchanged.
+    """
+    if not points or len(points) < 2:
+        raise ValueError("points must contain at least two [u,v] or [x,y,z] values")
+    mapped = [_map_blueprint_point(view, point, plane_offset) for point in points]
+
+    curve_data = bpy.data.curves.new(name=name, type='CURVE')
+    curve_data.dimensions = '3D'
+    curve_data.bevel_depth = bevel_depth
+    curve_data.resolution_u = 24
+
+    curve_type = curve_type.lower()
+    if curve_type == "bezier":
+        spline = curve_data.splines.new('BEZIER')
+        spline.bezier_points.add(len(mapped) - 1)
+        for bp, point in zip(spline.bezier_points, mapped):
+            bp.co = point
+            bp.handle_left_type = 'AUTO'
+            bp.handle_right_type = 'AUTO'
+    elif curve_type == "poly":
+        spline = curve_data.splines.new('POLY')
+        spline.points.add(len(mapped) - 1)
+        for p, point in zip(spline.points, mapped):
+            p.co = [point[0], point[1], point[2], 1.0]
+    else:
+        raise ValueError("curve_type must be 'bezier' or 'poly'")
+    spline.use_cyclic_u = cyclic
+
+    obj = bpy.data.objects.new(name, curve_data)
+    bpy.context.scene.collection.objects.link(obj)
+    obj.show_in_front = True
+    obj["mtec_trace_view"] = view.lower()
+    obj["mtec_trace_plane_offset"] = plane_offset
+    _link_to_collection(obj, collection, unlink_others=True)
+    return {
+        **object_summary(obj),
+        "view": view.lower(),
+        "points": mapped,
+        "cyclic": cyclic,
+        "collection": collection,
+    }
+
+def tool_create_measurement(
+    name: str,
+    point_a,
+    point_b,
+    view: str = "side",
+    plane_offset: float = 0.0,
+    collection: str = "Blueprint Measurements",
+):
+    """Create a visible measurement line and return the distance."""
+    a = mathutils.Vector(_map_blueprint_point(view, point_a, plane_offset))
+    b = mathutils.Vector(_map_blueprint_point(view, point_b, plane_offset))
+    distance = (b - a).length
+
+    curve_data = bpy.data.curves.new(name=name, type='CURVE')
+    curve_data.dimensions = '3D'
+    curve_data.bevel_depth = 0.01
+    spline = curve_data.splines.new('POLY')
+    spline.points.add(1)
+    spline.points[0].co = [a.x, a.y, a.z, 1.0]
+    spline.points[1].co = [b.x, b.y, b.z, 1.0]
+    obj = bpy.data.objects.new(name, curve_data)
+    bpy.context.scene.collection.objects.link(obj)
+    obj.show_in_front = True
+    obj["mtec_measurement_distance"] = distance
+    _link_to_collection(obj, collection, unlink_others=True)
+
+    return {
+        **object_summary(obj),
+        "point_a": list(a),
+        "point_b": list(b),
+        "distance": distance,
+        "collection": collection,
+    }
+
+def tool_sample_curve_points(object_name: str, samples_per_spline: int = 64):
+    """Sample world-space points from a curve for lofting or validation."""
+    obj = require_object(object_name)
+    if obj.type != 'CURVE':
+        raise ValueError(f"Object '{object_name}' is not a curve")
+    samples_per_spline = max(2, int(samples_per_spline))
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    eval_obj = obj.evaluated_get(depsgraph)
+    sampled = []
+    for spline in eval_obj.data.splines:
+        spline_points = []
+        if hasattr(spline, "bezier_points") and spline.bezier_points:
+            source_points = [point.co.copy() for point in spline.bezier_points]
+        else:
+            source_points = [point.co.to_3d() for point in spline.points]
+        if not source_points:
+            continue
+        for i in range(samples_per_spline):
+            factor = i / (samples_per_spline - 1)
+            if len(source_points) == 1:
+                point = source_points[0]
+            else:
+                scaled = factor * (len(source_points) - 1)
+                index = min(len(source_points) - 2, int(math.floor(scaled)))
+                local = scaled - index
+                point = source_points[index].lerp(source_points[index + 1], local)
+            world = obj.matrix_world @ point
+            spline_points.append([world.x, world.y, world.z])
+        sampled.append(spline_points)
+    return {"object": object_name, "splines": len(sampled), "samples_per_spline": samples_per_spline, "points": sampled}
 
 def tool_set_origin(object_name: str, origin_type: str = "ORIGIN_GEOMETRY", center: str = "MEDIAN"):
     obj = require_object(object_name)
@@ -2021,6 +2386,7 @@ TOOLS = {
     "list_objects": {"func": tool_list_objects, "description": "List scene objects", "schema": {"object_type": "Optional Blender type filter"}},
     "get_object_info": {"func": tool_get_object_info, "description": "Detailed object information", "schema": {"object_name": "str"}},
     "create_mesh_object": {"func": tool_create_mesh_object, "description": "Create a primitive mesh object", "schema": {}},
+    "create_mesh_from_pydata": {"func": tool_create_mesh_from_pydata, "description": "Create a mesh from explicit vertices/edges/faces", "schema": {"name": "str", "vertices": "List[[x,y,z]]", "edges": "List[[i,j]]?", "faces": "List[[...]]?"}},
     "create_curve_object": {"func": tool_create_curve_object, "description": "Create a curve object", "schema": {}},
     "create_text_object": {"func": tool_create_text_object, "description": "Create a text object", "schema": {}},
     "transform_object": {"func": tool_transform_object, "description": "Move/rotate/scale an object", "schema": {}},
@@ -2033,6 +2399,45 @@ TOOLS = {
     "move_to_collection": {"func": tool_move_to_collection, "description": "Link object into collection", "schema": {"object_name": "str", "collection_name": "str"}},
     "create_material": {"func": tool_create_material, "description": "Create a basic principled material", "schema": {}},
     "assign_material": {"func": tool_assign_material, "description": "Assign first material slot", "schema": {}},
+    "create_blueprint_plane": {
+        "func": tool_create_blueprint_plane,
+        "description": "Create a calibrated image plane for side/top/front blueprint modelling",
+        "schema": {
+            "image_path": "str",
+            "view": "side|top|front",
+            "name": "str?",
+            "real_width": "float?",
+            "real_height": "float?",
+            "plane_offset": "float",
+            "opacity": "float",
+        },
+    },
+    "setup_blueprint_scene": {
+        "func": tool_setup_blueprint_scene,
+        "description": "Create multiple calibrated blueprint planes from image paths",
+        "schema": {"blueprints": "List[Dict]", "collection": "str", "hide_existing": "bool"},
+    },
+    "create_trace_curve": {
+        "func": tool_create_trace_curve,
+        "description": "Create a side/top/front trace curve mapped onto a blueprint plane",
+        "schema": {
+            "name": "str",
+            "view": "side|top|front",
+            "points": "List[[u,v]] or List[[x,y,z]]",
+            "curve_type": "bezier|poly",
+            "cyclic": "bool",
+        },
+    },
+    "create_measurement": {
+        "func": tool_create_measurement,
+        "description": "Create a visible measurement line and return its scene-unit length",
+        "schema": {"name": "str", "point_a": "[u,v]|[x,y,z]", "point_b": "[u,v]|[x,y,z]", "view": "side|top|front"},
+    },
+    "sample_curve_points": {
+        "func": tool_sample_curve_points,
+        "description": "Sample world-space points from a trace curve for lofting or validation",
+        "schema": {"object_name": "str", "samples_per_spline": "int"},
+    },
     "set_origin": {"func": tool_set_origin, "description": "Set object origin", "schema": {"object_name": "str"}},
     "convert_object": {"func": tool_convert_object, "description": "Convert object type", "schema": {"object_name": "str", "target": "MESH|CURVE|..." }},
     "create_light": {"func": tool_create_light, "description": "Create a light", "schema": {}},
