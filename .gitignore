@@ -14,3 +14,21 @@ htmlcov/
 modelling/
 mtec-blender.json
 tools.json
+
+# Generated Blender outputs and previews stay out of the repo.
+renders/
+*.blend
+*.blend1
+*.png
+!doc/*.blend
+!doc/*.blend1
+!doc/*.png
+!doc/**/*.blend
+!doc/**/*.blend1
+!doc/**/*.png
+!docs/*.blend
+!docs/*.blend1
+!docs/*.png
+!docs/**/*.blend
+!docs/**/*.blend1
+!docs/**/*.png
