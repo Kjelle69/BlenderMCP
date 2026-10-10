@@ -147,6 +147,14 @@ Or ask the MCP tool:
 
 - `blender_list_tools`
 
+## Development Plan
+
+The current development roadmap is tracked in:
+
+- `doc/DEVELOPMENT_PLAN.md`
+
+The plan is based on real bridge sessions and currently prioritizes long-operation stability, safer mesh/boolean workflows, print-readiness checks, material zones, and surface-aware embossed text.
+
 ## Viewport Features
 
 The Blender panel also includes runtime viewport controls under `MTEC MCP -> Viewport`.
