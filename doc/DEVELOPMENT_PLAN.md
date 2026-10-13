@@ -2,6 +2,11 @@
 
 This plan captures gaps found during real modelling sessions and turns them into bridge/tooling work items.
 
+The [modelling shortcuts proposal](MODELLING_SHORTCUTS.md) adds prioritized
+workflows extracted from RV-4 and BSA scripts: validation, part replacement,
+profile members, formed sheets and openings. These are proposals; project
+scripts now live in the ignored local archive.
+
 ## Priorities
 
 ### 1. Stability for long Blender operations

@@ -4,6 +4,7 @@ __pycache__/
 *.pyd
 .Python
 .venv/
+dist/
 venv/
 env/
 ENV/
@@ -12,6 +13,13 @@ ENV/
 .coverage
 htmlcov/
 modelling/
+# Local modelling projects, build scripts, drawings and generated outputs.
+/_local_builds/
+/tmp/
+# Catch older model-script locations if a session writes into the repo root.
+/rv4_*.py
+/bsa_*_build.py
+/tmp_*.py
 mtec-blender.json
 tools.json
 

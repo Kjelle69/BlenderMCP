@@ -9,6 +9,14 @@ This project connects Codex or any MCP client to Blender in two steps:
 
 The split keeps Blender-side dependencies small while still giving Codex access to Blender tools.
 
+## Distribution contents
+
+`package_addon.py` packages an explicit allowlist of bridge runtime files.
+Model-specific scripts, drawings, scenes and previews belong in the Git-ignored
+`_local_builds/<project>/` folder and are excluded from the ZIP.
+See [repository layout](README.md#repository-and-distribution) and the
+[modelling shortcuts proposal](doc/MODELLING_SHORTCUTS.md).
+
 ## How It Works
 
 Codex / VS Code MCP client
@@ -24,6 +32,25 @@ Codex / VS Code MCP client
 - A local MCP client such as Codex in VS Code
 
 ## 1. Install The Blender Addon
+
+### One-button Codex setup (prototype)
+
+Build the installable ZIP with `python package_addon.py`. Install
+`dist/MTECBlenderBridge.zip` through Blender's **Install from Disk** menu.
+Disable/remove the older standalone addon before enabling the ZIP version.
+In **N -> MTEC MCP**, click **Anslut till Codex**.
+
+This prototype requires Python 3.10+ installed outside Blender and internet access.
+It creates a private runtime under `%LOCALAPPDATA%/MTECBlenderBridge` on Windows
+(or `~/.local/share/MTECBlenderBridge` elsewhere), installs dependencies in a venv,
+and adds `mcp_servers.mtec-blender` to `$CODEX_HOME/config.toml` (default `~/.codex`).
+Existing settings and comments are preserved, with a timestamped backup before
+each configuration update. Setup runs in the background; **Open installation log**
+shows errors. Restart Codex after setup and ask it to list Blender objects.
+The status means configured, not that a client has connected.
+
+The server uses standard MCP over stdio and can also be registered with other
+local MCP clients. This button currently configures Codex only.
 
 In Blender:
 

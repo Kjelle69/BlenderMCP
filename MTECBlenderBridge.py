@@ -12,6 +12,9 @@ import bpy
 import json
 import math
 import os
+from pathlib import Path
+import shutil
+import subprocess
 import mathutils
 import queue
 import threading
@@ -26,7 +29,7 @@ from urllib.parse import urlparse
 # ============================================================
 
 class MTECBRIDGE_Config:
-    REVISION = "v260428a"
+    REVISION = "v261010a"
     HOST = "127.0.0.1"
     PORT = 8765
     QUEUE_TIMEOUT = 60.0
@@ -2661,6 +2664,93 @@ def server_running():
 # UI
 # ============================================================
 
+codex_setup_process = None
+codex_setup_log = None
+codex_setup_status = "Codex: Not configured by this add-on"
+
+
+def codex_runtime_directory():
+    base = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / ".local" / "share")))
+    return base / "MTECBlenderBridge"
+
+
+def poll_codex_setup():
+    global codex_setup_process, codex_setup_log, codex_setup_status
+    if codex_setup_process is None:
+        return None
+    result = codex_setup_process.poll()
+    if result is None:
+        return 0.5
+    codex_setup_log.close()
+    codex_setup_log = None
+    codex_setup_process = None
+    codex_setup_status = "Codex: Configured - restart Codex" if result == 0 else "Setup failed - see installation log"
+    if result != 0:
+        print((codex_runtime_directory() / "setup.log").read_text(encoding="utf-8", errors="replace"))
+    for screen in bpy.data.screens:
+        for area in screen.areas:
+            if area.type == 'VIEW_3D':
+                area.tag_redraw()
+    return None
+
+
+class MTECBRIDGE_OT_connect_codex(bpy.types.Operator):
+    bl_idname = "mtecbridge.connect_codex"
+    bl_label = "Anslut till Codex"
+    bl_description = "Install the MCP runtime and configure Codex; requires Python 3.10+ and internet"
+
+    def execute(self, context):
+        global codex_setup_process, codex_setup_log, codex_setup_status
+        if codex_setup_process is not None:
+            return {'CANCELLED'}
+        source = Path(__file__).resolve().parent
+        if not all((source / name).is_file() for name in ("setup_codex.py", "requirements.txt", "mtec_codex_mcp_server.py")):
+            self.report({'ERROR'}, "Install the complete MTEC Blender Bridge ZIP, then try again")
+            return {'CANCELLED'}
+        python = shutil.which("py") if os.name == "nt" else None
+        command = [python, "-3"] if python else [shutil.which("python3") or shutil.which("python")]
+        if command[0] is None:
+            self.report({'ERROR'}, "Install Python 3.10 or newer, then restart Blender")
+            return {'CANCELLED'}
+        try:
+            if not server_running():
+                start_http_server()
+            target = codex_runtime_directory()
+            target.mkdir(parents=True, exist_ok=True)
+            codex_home = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
+            codex_setup_log = (target / "setup.log").open("w", encoding="utf-8")
+            codex_setup_process = subprocess.Popen(
+                command + [str(source / "setup_codex.py"), "--source", str(source),
+                           "--target", str(target), "--config", str(codex_home / "config.toml"),
+                           "--endpoint", f"http://{MTECBRIDGE_Config.HOST}:{MTECBRIDGE_Config.PORT}"],
+                stdout=codex_setup_log, stderr=subprocess.STDOUT,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            )
+            codex_setup_status = "Installing - please wait..."
+            bpy.app.timers.register(poll_codex_setup, first_interval=0.5)
+            self.report({'INFO'}, "Installing MCP runtime. You can continue using Blender.")
+            return {'FINISHED'}
+        except Exception as exc:
+            if codex_setup_log is not None:
+                codex_setup_log.close()
+                codex_setup_log = None
+            self.report({'ERROR'}, str(exc))
+            return {'CANCELLED'}
+
+
+class MTECBRIDGE_OT_setup_log(bpy.types.Operator):
+    bl_idname = "mtecbridge.setup_log"
+    bl_label = "Open installation log"
+
+    def execute(self, context):
+        path = codex_runtime_directory() / "setup.log"
+        if not path.exists():
+            self.report({'INFO'}, "No installation log yet")
+            return {'CANCELLED'}
+        bpy.ops.wm.path_open(filepath=str(path))
+        return {'FINISHED'}
+
+
 class MTECBRIDGE_OT_start_server(bpy.types.Operator):
     bl_idname = "mtecbridge.start_server"
     bl_label = "Start MTEC Bridge"
@@ -2702,6 +2792,11 @@ class MTECBRIDGE_PT_panel(bpy.types.Panel):
             box.operator("mtecbridge.stop_server", icon='PAUSE')
         else:
             box.operator("mtecbridge.start_server", icon='PLAY')
+        box.label(text=codex_setup_status)
+        row = box.row()
+        row.enabled = codex_setup_process is None
+        row.operator("mtecbridge.connect_codex", icon='LINKED')
+        box.operator("mtecbridge.setup_log", icon='TEXT')
         viewport_box = layout.box()
         viewport_box.prop(
             scene,
@@ -2739,6 +2834,8 @@ class MTECBRIDGE_PT_panel(bpy.types.Panel):
         box.label(text="/invoke")
 
 classes = [
+    MTECBRIDGE_OT_connect_codex,
+    MTECBRIDGE_OT_setup_log,
     MTECBRIDGE_OT_start_server,
     MTECBRIDGE_OT_stop_server,
     MTECBRIDGE_PT_panel,
@@ -2862,6 +2959,16 @@ def register():
         bpy.utils.register_class(cls)
 
 def unregister():
+    global codex_setup_process, codex_setup_log
+    if bpy.app.timers.is_registered(poll_codex_setup):
+        bpy.app.timers.unregister(poll_codex_setup)
+    if codex_setup_process is not None:
+        codex_setup_process.terminate()
+        codex_setup_process.wait()
+        codex_setup_process = None
+    if codex_setup_log is not None:
+        codex_setup_log.close()
+        codex_setup_log = None
     stop_http_server()
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)

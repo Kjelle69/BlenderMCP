@@ -1,0 +1,4 @@
+# Local modelling work is never part of a source distribution.
+/_local_builds export-ignore
+/tmp export-ignore
+/renders export-ignore
