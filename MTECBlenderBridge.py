@@ -1,7 +1,7 @@
 bl_info = {
     "name": "MTEC Blender Bridge",
     "author": "OpenAI + MTEC",
-    "version": (0, 3, 0),
+    "version": (0, 3, 1),
     "blender": (3, 6, 0),
     "location": "View3D > Sidebar > MTEC MCP",
     "description": "Local HTTP bridge for Codex/VS Code control of Blender",
@@ -25,7 +25,21 @@ from functools import wraps
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-if __package__:
+_geometry_tools_missing = not Path(__file__).with_name("mtec_geometry_tools.py").is_file()
+
+
+def _missing_geometry_tool(*args, **kwargs):
+    raise RuntimeError("Incomplete add-on installation: install the complete MTECBlenderBridge.zip, not MTECBlenderBridge.py")
+
+
+class _UnavailableGeometryTools:
+    def __getattr__(self, name):
+        return _missing_geometry_tool
+
+
+if _geometry_tools_missing:
+    geometry_tools = _UnavailableGeometryTools()
+elif __package__:
     from . import mtec_geometry_tools as geometry_tools
 else:
     _geometry_spec = importlib.util.spec_from_file_location(
@@ -38,7 +52,7 @@ else:
 # ============================================================
 
 class MTECBRIDGE_Config:
-    REVISION = "v261013a"
+    REVISION = "v261013b"
     HOST = "127.0.0.1"
     PORT = 8765
     QUEUE_TIMEOUT = 60.0
@@ -2805,6 +2819,8 @@ class MTECBRIDGE_PT_panel(bpy.types.Panel):
         else:
             box.operator("mtecbridge.start_server", icon='PLAY')
         box.label(text=codex_setup_status)
+        if _geometry_tools_missing:
+            box.label(text="Incomplete install: use the complete ZIP", icon='ERROR')
         row = box.row()
         row.enabled = codex_setup_process is None
         row.operator("mtecbridge.connect_codex", icon='LINKED')

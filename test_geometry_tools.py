@@ -3,6 +3,7 @@ import ast
 import importlib.util
 import sys
 import tempfile
+import shutil
 from zipfile import ZipFile
 from pathlib import Path
 import unittest
@@ -149,6 +150,18 @@ class GeometryTests(unittest.TestCase):
             finally:
                 for name in list(sys.modules):
                     if name.startswith('mtec_packed_test'):del sys.modules[name]
+
+    def test_single_file_install_does_not_crash(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'MTECBlenderBridge.py';shutil.copy2(ROOT/'MTECBlenderBridge.py',path)
+            spec=importlib.util.spec_from_file_location('mtec_incomplete_test',path)
+            bridge=importlib.util.module_from_spec(spec);spec.loader.exec_module(bridge)
+            self.assertTrue(bridge._geometry_tools_missing)
+            bridge.register()
+            try:
+                with self.assertRaisesRegex(RuntimeError,'complete MTECBlenderBridge.zip'):
+                    bridge.TOOLS['create_profile_member']['func']('Part',[0,0,0],[0,0,100])
+            finally:bridge.unregister()
 
     def test_tool_registry_and_mcp_argument_parity(self):
         spec=importlib.util.spec_from_file_location('bridge_test',ROOT/'MTECBlenderBridge.py')

@@ -197,6 +197,9 @@ For example, a 3/4 x 3/4 x 1/8 inch angle, ten inches long:
 Mesh checks evaluate modifiers by default; geometry replacement validates the
 raw candidate mesh. Inspect the evaluated result afterwards when keeping modifiers.
 Install the complete ZIP: the new geometry helper is required beside the add-on.
+Version 0.3.1 also lets an incomplete single-file installation load the basic
+bridge and displays a warning; geometry shortcuts then report that the complete
+ZIP is required instead of crashing add-on activation with a missing-file error.
 Restart the add-on/MCP server after upgrading; if installed through the setup
 button, use it again to update the copied external MCP server, then restart the client.
 
