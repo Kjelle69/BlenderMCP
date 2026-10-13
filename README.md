@@ -25,13 +25,14 @@ ignored `mtec-blender.json`.
 | --- | --- |
 | `MTECBlenderBridge.py` | Blender add-on and HTTP tools |
 | `mtec_codex_mcp_server.py` | External MCP server |
+| `mtec_geometry_tools.py` | Reusable mesh checks, geometry replacement and profile members |
 | `setup_codex.py`, `requirements.txt` | Runtime installation |
 | `package_addon.py` | ZIP packaging with an explicit file allowlist |
 | `test_*.py` | Bridge/setup development checks |
 | `doc/` | Bridge documentation and illustrations |
 | `_local_builds/` | Local model scripts, drawings, scenes and previews; ignored by Git |
 
-The ZIP contains only the add-on, MCP server, setup helper and dependencies list.
+The ZIP contains only the add-on, geometry helper, MCP server, setup helper and dependencies list.
 It never scans the workspace for files. Model scripts and their artifacts are
 archived together under `_local_builds/rv4/` and `_local_builds/bsa/`; the example
 Blender scene lives in `_local_builds/examples/`.
@@ -50,6 +51,12 @@ Environments, `dist/` and generated outputs are also ignored.
 an external Python installation and internet access to install dependencies.
 See the [modelling shortcuts proposal](doc/MODELLING_SHORTCUTS.md) and
 [development plan](doc/DEVELOPMENT_PLAN.md).
+
+Version 0.3.0 adds `validate_meshes`, `replace_mesh_geometry` and
+`create_profile_member` (L/U/solid or hollow rectangular sections), with explicit
+meter/mm/inch units. Run `test_geometry_tools.py` using Blender in background
+mode for the geometry checks. See the [2D drawing import plan](doc/DRAWING_IMPORT_PLAN.md)
+for calibrated PDF crops and traces.
 
 ## Diagnostics
 

@@ -1,7 +1,7 @@
 bl_info = {
     "name": "MTEC Blender Bridge",
     "author": "OpenAI + MTEC",
-    "version": (0, 2, 0),
+    "version": (0, 3, 0),
     "blender": (3, 6, 0),
     "location": "View3D > Sidebar > MTEC MCP",
     "description": "Local HTTP bridge for Codex/VS Code control of Blender",
@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import importlib.util
 import mathutils
 import queue
 import threading
@@ -24,12 +25,20 @@ from functools import wraps
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
+if __package__:
+    from . import mtec_geometry_tools as geometry_tools
+else:
+    _geometry_spec = importlib.util.spec_from_file_location(
+        "mtec_geometry_tools", Path(__file__).with_name("mtec_geometry_tools.py"))
+    geometry_tools = importlib.util.module_from_spec(_geometry_spec)
+    _geometry_spec.loader.exec_module(geometry_tools)
+
 # ============================================================
 # Config
 # ============================================================
 
 class MTECBRIDGE_Config:
-    REVISION = "v261010a"
+    REVISION = "v261013a"
     HOST = "127.0.0.1"
     PORT = 8765
     QUEUE_TIMEOUT = 60.0
@@ -2383,6 +2392,9 @@ def tool_set_world_color_or_hdri(color=None, hdri_path: str = "", strength: floa
         "color": list(color) if color else None,
     }
 TOOLS = {
+    "validate_meshes": {"func": geometry_tools.validate_meshes, "description": "Inspect mesh topology and dimensions without modifying objects", "schema": {"object_names": "List[str]", "units": "m|mm|in", "evaluated": "bool", "require_closed": "bool", "expected_dimensions": "Object-name to XYZ dimensions map", "tolerance": "float in units"}},
+    "replace_mesh_geometry": {"func": geometry_tools.replace_mesh_geometry, "description": "Replace local mesh geometry preserving object identity, transform, materials and modifiers", "schema": {"object_name": "str", "vertices": "List[[x,y,z]]", "faces": "List[List[int]]", "units": "m|mm|in", "require_closed": "bool", "clear_vertex_groups": "bool"}},
+    "create_profile_member": {"func": geometry_tools.create_profile_member, "description": "Create a straight closed L, U or rectangular profile between two points", "schema": {"name": "str", "start": "[x,y,z]", "end": "[x,y,z]", "profile": "L|U|RECT", "width": "float", "height": "float", "thickness": "float", "units": "m|mm|in", "reference_normal": "Optional section X direction", "hollow": "bool; RECT only", "material_name": "str", "collection_name": "str"}},
     "get_scene_info": {"func": tool_get_scene_info, "description": "Basic scene information", "schema": {}},
     "set_bridge_options": {"func": tool_set_bridge_options, "description": "Configure bridge UI/runtime options", "schema": {}},
     "cinematic_reveal_selection": {"func": tool_cinematic_reveal_selection, "description": "Cinematic viewport reveal for selected objects", "schema": {}},

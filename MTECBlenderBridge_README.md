@@ -56,7 +56,7 @@ In Blender:
 
 1. Open `Edit -> Preferences -> Add-ons`
 2. Click `Install...`
-3. Select `MTECBlenderBridge.py`
+3. Select `dist/MTECBlenderBridge.zip` (build with `python package_addon.py`)
 4. Enable the addon
 
 After enabling it:
@@ -173,6 +173,32 @@ To see the exact tool list at runtime, open:
 Or ask the MCP tool:
 
 - `blender_list_tools`
+
+### Geometry shortcuts (0.3.0)
+
+- `validate_meshes`: read-only mesh topology and world XYZ bounds. Use
+  `require_closed=True` for solids and optionally provide expected dimensions.
+- `replace_mesh_geometry`: local vertex/face data in `m`, `mm` or `in`, preserving
+  object identity, transform, collections, material slots and modifiers. Other
+  objects using the previous mesh are untouched. Shape keys are unsupported;
+  vertex groups require explicit clearing. Face material indices are reset.
+- `create_profile_member`: straight capped L/U/RECT section between two points.
+  RECT supports `hollow=True`. Section origin is its lower corner; specify
+  `reference_normal` to control orientation. Names must be unused.
+
+For example, a 3/4 x 3/4 x 1/8 inch angle, ten inches long:
+
+```json
+{"name":"Angle","start":[0,0,0],"end":[0,0,10],"profile":"L",
+ "width":0.75,"height":0.75,"thickness":0.125,"units":"in",
+ "reference_normal":[1,0,0]}
+```
+
+Mesh checks evaluate modifiers by default; geometry replacement validates the
+raw candidate mesh. Inspect the evaluated result afterwards when keeping modifiers.
+Install the complete ZIP: the new geometry helper is required beside the add-on.
+Restart the add-on/MCP server after upgrading; if installed through the setup
+button, use it again to update the copied external MCP server, then restart the client.
 
 ## Development Plan
 

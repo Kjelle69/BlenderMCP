@@ -167,6 +167,54 @@ def create_mesh_from_pydata(
     )
 
 @mcp.tool()
+def validate_meshes(
+    object_names: list[str], evaluated: bool = True, units: str = "mm",
+    require_closed: bool = False,
+    expected_dimensions: dict[str, list[float]] | None = None,
+    tolerance: float = 0.1,
+) -> dict:
+    """Read-only topology and world XYZ bounds in m/mm/in; optionally check expected dimensions."""
+    return bridge_invoke("validate_meshes", object_names=object_names, evaluated=evaluated,
+                         units=units, require_closed=require_closed,
+                         expected_dimensions=expected_dimensions, tolerance=tolerance)
+
+
+@mcp.tool()
+def replace_mesh_geometry(
+    object_name: str, vertices: list[list[float]], faces: list[list[int]],
+    units: str = "mm", require_closed: bool = False,
+    clear_vertex_groups: bool = False,
+) -> dict:
+    """Replace local geometry preserving identity, transforms, material slots and modifiers.
+
+    Other objects sharing the old mesh are untouched. Shape keys are unsupported;
+    vertex groups require explicit clearing because vertex indices change.
+    """
+    return bridge_invoke("replace_mesh_geometry", object_name=object_name,
+                         vertices=vertices, faces=faces, units=units,
+                         require_closed=require_closed, clear_vertex_groups=clear_vertex_groups)
+
+
+@mcp.tool()
+def create_profile_member(
+    name: str, start: list[float], end: list[float], profile: str = "L",
+    width: float = 19.05, height: float = 19.05, thickness: float = 3.175,
+    units: str = "mm", reference_normal: list[float] | None = None,
+    hollow: bool = False, material_name: str = "", collection_name: str = "",
+) -> dict:
+    """Create a capped straight L/U/RECT section between points in m/mm/in.
+
+    The section's lower corner lies on start/end. reference_normal sets section X;
+    it must not parallel the member. RECT is solid unless hollow=True. Names must
+    be unused. Materials must exist; collections are created if missing.
+    """
+    return bridge_invoke("create_profile_member", name=name, start=start, end=end,
+                         profile=profile, width=width, height=height, thickness=thickness,
+                         units=units, reference_normal=reference_normal, hollow=hollow,
+                         material_name=material_name, collection_name=collection_name)
+
+
+@mcp.tool()
 def create_curve_object(
     curve_type: str = "bezier",
     name: str = "Curve",

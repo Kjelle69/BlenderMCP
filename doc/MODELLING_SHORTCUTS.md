@@ -1,6 +1,8 @@
 # Modelling shortcuts extracted from build scripts
 
-These are proposals, not implemented tools. They come from the local RV-4 and
+The first three tools below are implemented in version 0.3.0: `validate_meshes`,
+`replace_mesh_geometry` and `create_profile_member`. The remaining tools are proposals.
+They come from the local RV-4 and
 BSA scripts archived in `_local_builds/`. Model dimensions, aircraft station
 tables, part names and reference drawings must stay outside the bridge.
 
